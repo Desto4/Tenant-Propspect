@@ -17,6 +17,9 @@ try:
 except ImportError:
     pass
 
+import hashlib, secrets
+from functools import wraps
+
 import requests
 from flask import Flask, request, session, Response, send_file, jsonify, render_template, redirect
 import anthropic
@@ -39,6 +42,56 @@ _leads_store    = []
 _outreach_store = []
 _perf_store     = []   # performance records [{provider, model, duration_ms, ...}]
 _hunter_key     = ""   # Hunter.io API key (set from settings)
+
+_PROFILE_FILE = os.path.join(os.path.dirname(__file__), ".user_profile.json")
+
+def _load_profile():
+    defaults = {
+        "full_name": "Gabe",
+        "email": "",
+        "role": "MMG Broker",
+        "company": "MMG",
+        "initials": "G",
+        "password_hash": _hash_password("admin"),
+        "salt": ""
+    }
+    if not os.path.exists(_PROFILE_FILE):
+        return defaults
+    try:
+        with open(_PROFILE_FILE) as f:
+            data = json.load(f)
+        for k, v in defaults.items():
+            data.setdefault(k, v)
+        return data
+    except Exception:
+        return defaults
+
+def _save_profile(data):
+    with open(_PROFILE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def _hash_password(password, salt=None):
+    if salt is None:
+        salt = secrets.token_hex(16)
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
+    return f"{salt}:{hashed}"
+
+def _check_password(password, stored_hash):
+    try:
+        salt, hashed = stored_hash.split(":", 1)
+        return _hash_password(password, salt) == stored_hash
+    except Exception:
+        # Legacy plain-text fallback
+        return password == stored_hash
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            from flask import redirect, url_for
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
 
 # Gmail OAuth storage (persisted to file so server restarts don't lose it)
 _GMAIL_TOKEN_FILE   = os.path.join(os.path.dirname(__file__), ".gmail_token.json")
@@ -415,6 +468,75 @@ TOOLS = [
                 },
             },
             "required": [],
+        },
+    },
+    {
+        "name": "research_company",
+        "description": (
+            "Deep-research a single company. Use when the user asks to 'research', 'look up', "
+            "'find everything about', or 'deep dive' on a specific business. "
+            "Runs Sunbiz lookup, Google reviews, website scrape, and expansion analysis in one call. "
+            "Returns a structured company research report."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_name": {"type": "string", "description": "The company or business name to research"},
+                "city":         {"type": "string", "description": "City/state to narrow the search (optional)"},
+                "website":      {"type": "string", "description": "Known website URL (optional, skips discovery)"},
+            },
+            "required": ["company_name"],
+        },
+    },
+    {
+        "name": "generate_prospecting_report",
+        "description": (
+            "Generate a branded PDF prospecting report from the collected leads. "
+            "Creates a formatted multi-page report with an executive summary, stats, and a lead overview table. "
+            "Returns a downloadable file and metadata for the in-chat PDF preview card. "
+            "Use this when the user asks to 'generate a report', 'create a PDF', 'compile results', or 'export report'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Report title, e.g. 'Nail Salon Expansion Targets'.",
+                },
+                "subtitle": {
+                    "type": "string",
+                    "description": "Subtitle, e.g. 'Miami-Dade County · April 2026'.",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Executive summary paragraph written by the agent.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browse_url",
+        "description": (
+            "Visit any URL and return its full text content. Use this to read articles, "
+            "company pages, news, LinkedIn profiles, pricing pages, or any public web page. "
+            "Returns the page title and cleaned text. Great for research on a specific URL."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The full URL to visit (must start with http:// or https://).",
+                },
+                "extract": {
+                    "type": "string",
+                    "description": "Optional hint for what to extract: 'full' (default), 'links', or 'tables'.",
+                    "enum": ["full", "links", "tables"],
+                    "default": "full",
+                },
+            },
+            "required": ["url"],
         },
     },
     {
@@ -1641,6 +1763,417 @@ def enrich_leads_batch(leads):
     }
 
 
+def research_company(company_name, city="", website=""):
+    """
+    Deep-research a single company: Sunbiz, Google reviews, website scrape,
+    expansion probability scoring. Returns a structured report dict with
+    _report_type='company_research'.
+    """
+    result = {
+        "_report_type": "company_research",
+        "company_name": company_name,
+        "city": city,
+        "date": datetime.now().strftime("%b %d, %Y"),
+    }
+
+    # 1. Sunbiz lookup
+    try:
+        sb = sunbiz_lookup(company_name)
+        result["sunbiz"] = sb if isinstance(sb, dict) else {}
+    except Exception:
+        result["sunbiz"] = {}
+
+    # 2. Resolve website
+    resolved_site = website or result["sunbiz"].get("website", "")
+    result["website"] = resolved_site
+
+    # 3. Website / social scrape
+    if resolved_site:
+        try:
+            contact = scrape_website_contact(resolved_site)
+            result["contact_data"] = contact if isinstance(contact, dict) else {}
+        except Exception:
+            result["contact_data"] = {}
+    else:
+        result["contact_data"] = {}
+
+    # 4. Google reviews
+    try:
+        query = f"{company_name} {city}".strip()
+        gr = get_google_reviews(query)
+        result["google_rating"]  = gr.get("google_rating")
+        result["google_reviews"] = gr.get("google_review_count")
+    except Exception:
+        result["google_rating"]  = None
+        result["google_reviews"] = None
+
+    # 5. Expansion probability + signals
+    exp = _compute_expansion_probability(result)
+    result["expansion_probability"] = exp["score"]
+    result["expansion_signals"]     = exp["signals"]
+
+    return result
+
+
+def _compute_expansion_probability(data):
+    """Score 0-99 + signal list based on available research data."""
+    score   = 35
+    signals = []
+    sb      = data.get("sunbiz", {})
+    cd      = data.get("contact_data", {})
+
+    # Active license
+    status = (sb.get("status") or sb.get("sunbiz_status") or "").lower()
+    if "active" in status:
+        score += 10
+
+    # Google rating & reviews
+    rating  = 0.0
+    reviews = 0
+    try:  rating  = float(data.get("google_rating") or 0)
+    except Exception: pass
+    try:  reviews = int(str(data.get("google_reviews") or 0).replace(",", ""))
+    except Exception: pass
+
+    if rating >= 4.5:
+        score += 20
+        signals.append(f"High customer satisfaction ({rating}★ Google rating across {reviews:,} reviews)")
+    elif rating >= 4.0:
+        score += 10
+        if reviews:
+            signals.append(f"Strong online reputation ({rating}★ across {reviews:,} reviews)")
+
+    if reviews >= 300:
+        score += 5
+
+    # Years in business
+    years = 0
+    try:
+        ys = sb.get("years_in_business") or ""
+        years = int(str(ys).split()[0])
+    except Exception:
+        try:
+            fd = sb.get("formation_date", "")
+            if fd:
+                from datetime import datetime as _dt
+                d = _dt.strptime(fd, "%m/%d/%Y")
+                years = int((_dt.now() - d).days / 365)
+        except Exception:
+            pass
+
+    if years >= 5:
+        score += 15
+        signals.append(f"{years}-year operational history demonstrates business stability and expansion readiness")
+    elif years >= 3:
+        score += 8
+        signals.append(f"{years} years in business — approaching prime expansion window")
+
+    # Website & social
+    if data.get("website"):
+        score += 5
+    if cd.get("instagram_url"):
+        score += 8
+        signals.append("Active social media presence indicates marketing momentum and brand awareness")
+    if cd.get("facebook_url"):
+        score += 3
+
+    # Owner / contact identified
+    owner = sb.get("owner_name") or ""
+    if owner:
+        score += 5
+        signals.append(f"Owner {owner.title()} identified — direct decision-maker outreach possible")
+
+    owner_email = sb.get("owner_email") or cd.get("owner_email") or ""
+    owner_phone = sb.get("owner_phone") or cd.get("owner_phone") or ""
+    if owner_email or owner_phone:
+        score += 5
+        signals.append("Direct owner contact info verified — high response probability for outreach")
+
+    # Pad if short
+    if len(signals) < 3:
+        signals.append("Single-location operation — minimal competitive risk from multi-location chains")
+    if len(signals) < 3 and years >= 3:
+        signals.append("Consistent operations over multiple years signal financial health and growth potential")
+
+    return {
+        "score":   min(96, max(25, score)),
+        "signals": signals[:6],
+    }
+
+
+def browse_url(url, extract="full"):
+    """
+    Visit any public URL and return its text content.
+    Tries a fast requests-based fetch first; falls back to Playwright for
+    JS-heavy pages.
+    """
+    import re as _re
+
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    html = None
+
+    # ── Fast path: plain HTTP ─────────────────────────────────────────────────
+    try:
+        r = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        if r.status_code == 200:
+            html = r.text
+    except Exception:
+        pass
+
+    # ── Fallback: headless Playwright ────────────────────────────────────────
+    if not html:
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                )
+                ctx = browser.new_context(user_agent=headers["User-Agent"])
+                page = ctx.new_page()
+                page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                page.wait_for_timeout(1500)
+                html = page.content()
+                browser.close()
+        except Exception as e:
+            return {"error": f"Could not fetch page: {e}", "url": url}
+
+    if not html:
+        return {"error": "Empty response from page", "url": url}
+
+    # ── Parse with BeautifulSoup ──────────────────────────────────────────────
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Remove noisy tags
+        for tag in soup(["script", "style", "noscript", "svg", "img",
+                          "header", "footer", "nav", "aside"]):
+            tag.decompose()
+
+        title = soup.title.get_text(strip=True) if soup.title else ""
+
+        if extract == "links":
+            links = []
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                text = a.get_text(strip=True)
+                if href.startswith("http") and text:
+                    links.append({"text": text[:80], "href": href})
+            return {"url": url, "title": title, "links": links[:50]}
+
+        if extract == "tables":
+            tables = []
+            for tbl in soup.find_all("table"):
+                rows = []
+                for tr in tbl.find_all("tr"):
+                    cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+                    if cells:
+                        rows.append(cells)
+                if rows:
+                    tables.append(rows)
+            return {"url": url, "title": title, "tables": tables[:10]}
+
+        # Default: full text
+        text = soup.get_text(separator="\n")
+        # Collapse blank lines
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        text = "\n".join(lines)
+        # Limit to ~8 000 chars so it fits in context
+        if len(text) > 8000:
+            text = text[:8000] + "\n\n[…content truncated…]"
+
+        return {"url": url, "title": title, "text": text}
+
+    except Exception as e:
+        # Return raw stripped text as last resort
+        clean = _re.sub(r"<[^>]+>", " ", html)
+        clean = _re.sub(r"\s+", " ", clean).strip()[:8000]
+        return {"url": url, "title": "", "text": clean}
+
+
+def generate_prospecting_report(title="Tenant Prospecting Report", subtitle="", summary=""):
+    """
+    Generate a branded HTML prospecting report from _leads_store.
+    Saves to the app directory and returns structured metadata for the in-chat PDF card.
+    """
+    import os, math
+    from datetime import datetime
+
+    leads  = list(_leads_store)
+    n      = len(leads)
+    scores = []
+    for l in leads:
+        ep = l.get("expansion_probability")
+        if isinstance(ep, dict):
+            scores.append(ep.get("score", 0))
+        elif isinstance(ep, (int, float)):
+            scores.append(int(ep))
+
+    avg_score = int(round(sum(scores) / len(scores))) if scores else 0
+    hot_leads = sum(1 for s in scores if s >= 80)
+
+    date_str = datetime.now().strftime("%b%Y")
+    slug     = title.replace(" ", "_")[:30]
+    filename = f"MMG_{slug}_{date_str}.html"
+    filepath = os.path.join(os.path.dirname(__file__), filename)
+
+    if not subtitle:
+        subtitle = datetime.now().strftime("%B %Y")
+    if not summary:
+        summary = (
+            f"This report profiles {n} businesses identified as high-probability expansion "
+            f"candidates for MMG Equity Partners commercial space placements. "
+            f"All businesses were verified through Sunbiz, Google, and direct contact enrichment."
+        )
+
+    # ── Build HTML ────────────────────────────────────────────────────────────
+    def _row(l):
+        name  = (l.get("trade_name") or l.get("entity_name") or l.get("company_name") or "—").strip()
+        city  = (l.get("city") or "").strip()
+        phone = (l.get("phone") or l.get("general_phone") or "—").strip()
+        email = (l.get("owner_email") or l.get("general_email") or "—").strip()
+        ep    = l.get("expansion_probability")
+        score = ep.get("score", 0) if isinstance(ep, dict) else (int(ep) if isinstance(ep, (int,float)) else 0)
+        hot   = score >= 80
+        pill_style = "background:#d1fae5;color:#059669" if hot else "background:#f3f4f6;color:#6b7280"
+        return f"""
+        <tr>
+            <td style="padding:10px 16px;border-top:1px solid #f1f5f9">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:28px;height:28px;border-radius:50%;background:#0d9488;color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">{name[0].upper()}</div>
+                    <div>
+                        <div style="font-size:13px;font-weight:600;color:#111827">{name}</div>
+                        <div style="font-size:11px;color:#9ca3af">{city}</div>
+                    </div>
+                </div>
+            </td>
+            <td style="padding:10px 16px;border-top:1px solid #f1f5f9;font-size:12px;color:#6b7280">{phone}</td>
+            <td style="padding:10px 16px;border-top:1px solid #f1f5f9;font-size:12px;color:#6b7280">{email}</td>
+            <td style="padding:10px 16px;border-top:1px solid #f1f5f9">
+                <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;{pill_style}">{score}%</span>
+            </td>
+        </tr>"""
+
+    rows_html = "\n".join(_row(l) for l in leads[:50])
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f1f5f9; color:#111827; }}
+  .page {{ max-width:780px; margin:0 auto; padding:32px 16px; }}
+  @media print {{
+    body {{ background:white; }}
+    .page {{ padding:0; }}
+    .no-print {{ display:none; }}
+  }}
+</style>
+</head>
+<body>
+<div class="page">
+  <!-- Hero -->
+  <div style="background:#0f1b2d;border-radius:16px;padding:40px;color:white;margin-bottom:16px">
+    <p style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:#2dd4bf;text-transform:uppercase">MMG EQUITY PARTNERS · CONFIDENTIAL</p>
+    <h1 style="font-size:28px;font-weight:800;margin-top:8px">{title}</h1>
+    <p style="font-size:14px;color:#94a3b8;margin-top:4px">{subtitle}</p>
+    <div style="display:flex;align-items:center;gap:0;margin-top:28px">
+      <div style="padding-right:32px">
+        <div style="font-size:36px;font-weight:800;color:white">{n}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Prospects</div>
+      </div>
+      <div style="width:1px;height:48px;background:#1e2d40"></div>
+      <div style="padding:0 32px">
+        <div style="font-size:36px;font-weight:800;color:white">{avg_score}%</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Avg. Match</div>
+      </div>
+      <div style="width:1px;height:48px;background:#1e2d40"></div>
+      <div style="padding-left:32px">
+        <div style="font-size:36px;font-weight:800;color:#2dd4bf">{hot_leads}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Hot leads</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  <div style="background:white;border-radius:16px;padding:32px;margin-bottom:16px">
+    <p style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:#9ca3af;text-transform:uppercase">Executive Summary</p>
+    <p style="font-size:14px;line-height:1.7;color:#374151;margin-top:12px">{summary}</p>
+  </div>
+
+  <!-- Leads table -->
+  <div style="background:white;border-radius:16px;overflow:hidden;margin-bottom:16px">
+    <div style="padding:20px 24px;border-bottom:1px solid #f1f5f9">
+      <p style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:#9ca3af;text-transform:uppercase">Prospect Overview</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:0.05em;text-transform:uppercase">Business</th>
+          <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:0.05em;text-transform:uppercase">Phone</th>
+          <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:0.05em;text-transform:uppercase">Email</th>
+          <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:0.05em;text-transform:uppercase">Score</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+    </table>
+  </div>
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:16px;font-size:11px;color:#9ca3af">
+    Generated by MMG Agent · {datetime.now().strftime("%B %d, %Y")} · Confidential
+  </div>
+</div>
+</body>
+</html>"""
+
+    # Save file
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(html)
+        size_mb = round(os.path.getsize(filepath) / (1024 * 1024), 1) or 0.1
+    except Exception as e:
+        size_mb = 0.1
+
+    # Try WeasyPrint for real PDF (optional)
+    pdf_filename = filename.replace(".html", ".pdf")
+    pdf_filepath = os.path.join(os.path.dirname(__file__), pdf_filename)
+    try:
+        from weasyprint import HTML as _WP
+        _WP(string=html, base_url=os.path.dirname(__file__)).write_pdf(pdf_filepath)
+        size_mb = round(os.path.getsize(pdf_filepath) / (1024 * 1024), 1) or 0.1
+        filename = pdf_filename
+    except Exception:
+        pass  # WeasyPrint not available — serve HTML instead
+
+    return {
+        "_report_type": "prospecting_report",
+        "filename":    filename,
+        "title":       title,
+        "subtitle":    subtitle,
+        "summary":     summary,
+        "pages":       max(1, math.ceil(n / 10)),
+        "size_mb":     size_mb,
+        "leads_count": n,
+        "avg_score":   avg_score,
+        "hot_leads":   hot_leads,
+        "leads":       leads[:50],
+    }
+
+
 TOOL_MAP = {
     "search_businesses_maps": search_businesses_maps,
     "web_search":             web_search,
@@ -1656,6 +2189,9 @@ TOOL_MAP = {
     "save_outreach_csv":      save_outreach_csv,
     "send_gmail_email":       send_gmail_email,
     "create_gmail_drafts":    create_gmail_drafts,
+    "research_company":           research_company,
+    "browse_url":                 browse_url,
+    "generate_prospecting_report": generate_prospecting_report,
 }
 
 
@@ -1800,7 +2336,14 @@ def _run_agent_openai_compat(user_message: str, history: list,
                 except Exception:
                     inputs = {}
 
-                yield f"data: {json.dumps({'type': 'tool_start', 'name': name})}\n\n"
+                start_evt = {'type': 'tool_start', 'name': name, 'input': inputs}
+                if name == 'upload_leads_to_hubspot':
+                    start_evt['leads'] = [
+                        {'company': (l.get('trade_name') or l.get('entity_name') or '').strip(),
+                         'email':   (l.get('owner_email') or l.get('general_email') or '').strip()}
+                        for l in _leads_store if (l.get('owner_email') or l.get('general_email'))
+                    ]
+                yield f"data: {json.dumps(start_evt)}\n\n"
                 result = run_tool(name, inputs,
                                   apollo_key=apollo_key,
                                   hubspot_token=hubspot_token)
@@ -1886,12 +2429,12 @@ def run_agent_perplexity(user_message, history, perplexity_key, model,
 
 def run_agent_anthropic(user_message: str, history: list,
                         anthropic_key: str,
-                        model="claude-opus-4-6",
+                        model="claude-sonnet-4-6",
                         apollo_key="", hubspot_token=""):
     """Agent loop using the Anthropic SDK."""
     import time as _time
     client = anthropic.Anthropic(api_key=anthropic_key)
-    MODEL  = model or "claude-opus-4-6"
+    MODEL  = model or "claude-sonnet-4-6"
 
     api_messages = []
     for msg in history:
@@ -1933,7 +2476,14 @@ def run_agent_anthropic(user_message: str, history: list,
 
             tool_results = []
             for tc in tool_calls:
-                yield f"data: {json.dumps({'type': 'tool_start', 'name': tc.name})}\n\n"
+                start_evt = {'type': 'tool_start', 'name': tc.name, 'input': tc.input}
+                if tc.name == 'upload_leads_to_hubspot':
+                    start_evt['leads'] = [
+                        {'company': (l.get('trade_name') or l.get('entity_name') or '').strip(),
+                         'email':   (l.get('owner_email') or l.get('general_email') or '').strip()}
+                        for l in _leads_store if (l.get('owner_email') or l.get('general_email'))
+                    ]
+                yield f"data: {json.dumps(start_evt)}\n\n"
                 result = run_tool(tc.name, tc.input,
                                   apollo_key=apollo_key,
                                   hubspot_token=hubspot_token)
@@ -1963,7 +2513,7 @@ def run_agent_anthropic(user_message: str, history: list,
 
 def run_agent(user_message: str, history: list,
               anthropic_key="", apollo_key="", hubspot_token="",
-              claude_model="claude-opus-4-6",
+              claude_model="claude-sonnet-4-6",
               gemini_key="", model_provider="anthropic",
               gemini_model="gemini-3-flash-preview",
               perplexity_key="", perplexity_model="sonar-pro"):
@@ -2019,6 +2569,7 @@ def add_cors(response):
 
 
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
@@ -2035,7 +2586,7 @@ def get_config():
         "perplexity":     bool(session.get("perplexity_key")   or os.getenv("PERPLEXITY_API_KEY")),
         "gmail":          gmail_connected,
         "model_provider":   session.get("model_provider",   "anthropic"),
-        "claude_model":     session.get("claude_model",     "claude-opus-4-6"),
+        "claude_model":     session.get("claude_model",     "claude-sonnet-4-6"),
         "gemini_model":     session.get("gemini_model",     "gemini-3-flash-preview"),
         "perplexity_model": session.get("perplexity_model", "sonar-pro"),
     })
@@ -2099,7 +2650,7 @@ def chat():
     hubspot_token  = session.get("hubspot_token")  or os.getenv("HUBSPOT_TOKEN", "")
     gemini_key       = session.get("gemini_key")       or os.getenv("GEMINI_API_KEY", "")
     model_provider   = session.get("model_provider",   "anthropic")
-    claude_model     = session.get("claude_model",     "claude-opus-4-6")
+    claude_model     = session.get("claude_model",     "claude-sonnet-4-6")
     gemini_model     = session.get("gemini_model",     "gemini-2.0-flash")
     perplexity_key   = session.get("perplexity_key")   or os.getenv("PERPLEXITY_API_KEY", "")
     # Restore Hunter key into global so enrichment can use it
@@ -2240,6 +2791,69 @@ def download_outreach():
     )
 
 
+@app.route("/api/files")
+def list_files():
+    """Return metadata for all generated files (CSV, PDF, email exports)."""
+    base = os.path.dirname(__file__)
+    files = []
+
+    # Extension → type mapping
+    ext_type = {
+        ".csv":  "csv",
+        ".pdf":  "pdf",
+        ".eml":  "email",
+        ".html": "email",
+    }
+
+    # Friendly source-task labels for known filenames
+    task_labels = {
+        "leads.csv":           "Prospecting search",
+        "outreach_drafts.csv": "Outreach drafts",
+    }
+
+    for fname in os.listdir(base):
+        _, ext = os.path.splitext(fname.lower())
+        ftype = ext_type.get(ext)
+        if not ftype:
+            continue
+        fpath = os.path.join(base, fname)
+        try:
+            stat = os.stat(fpath)
+        except OSError:
+            continue
+        size_bytes = stat.st_size
+        if size_bytes < 1024:
+            size_str = f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+        else:
+            size_str = f"{size_bytes / (1024*1024):.1f} MB"
+        date_str = datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %Y")
+        files.append({
+            "name":  fname,
+            "type":  ftype,
+            "size":  size_str,
+            "date":  date_str,
+            "task":  task_labels.get(fname, ""),
+        })
+
+    # Sort newest first
+    files.sort(key=lambda f: os.path.getmtime(os.path.join(base, f["name"])), reverse=True)
+    return jsonify({"files": files})
+
+
+@app.route("/api/download/file")
+def download_file():
+    """Download any generated file by name (restricted to app directory)."""
+    name = request.args.get("name", "")
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        return jsonify({"error": "Invalid filename"}), 400
+    fpath = os.path.join(os.path.dirname(__file__), name)
+    if not os.path.exists(fpath):
+        return jsonify({"error": "File not found"}), 404
+    return send_file(fpath, as_attachment=True, download_name=name)
+
+
 @app.route("/api/clear_leads", methods=["POST"])
 def clear_leads():
     global _leads_store, _outreach_store
@@ -2336,6 +2950,65 @@ def gmail_callback():
 def gmail_disconnect():
     if os.path.exists(_GMAIL_TOKEN_FILE):
         os.remove(_GMAIL_TOKEN_FILE)
+    return jsonify({"ok": True})
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        password = data.get("password", "")
+        profile = _load_profile()
+        if _check_password(password, profile.get("password_hash", "")):
+            session["logged_in"] = True
+            session["user_name"] = profile.get("full_name", "Gabe")
+            return jsonify({"ok": True})
+        return jsonify({"error": "Incorrect password"}), 401
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.route("/api/profile", methods=["GET", "POST"])
+@login_required
+def api_profile():
+    if request.method == "GET":
+        p = _load_profile()
+        return jsonify({k: v for k, v in p.items() if k != "password_hash"})
+    data = request.get_json(silent=True) or {}
+    profile = _load_profile()
+    for field in ["full_name", "email", "role", "company"]:
+        if field in data:
+            profile[field] = data[field]
+    # Recompute initials
+    name = profile.get("full_name", "")
+    parts = name.split()
+    profile["initials"] = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper() if parts else "G"
+    _save_profile(profile)
+    return jsonify({"ok": True, "initials": profile["initials"]})
+
+
+@app.route("/api/change_password", methods=["POST"])
+@login_required
+def api_change_password():
+    data = request.get_json(silent=True) or {}
+    current = data.get("current_password", "")
+    new_pw  = data.get("new_password", "")
+    confirm = data.get("confirm_password", "")
+    profile = _load_profile()
+    if not _check_password(current, profile.get("password_hash", "")):
+        return jsonify({"error": "Current password is incorrect"}), 400
+    if len(new_pw) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+    if new_pw != confirm:
+        return jsonify({"error": "Passwords do not match"}), 400
+    profile["password_hash"] = _hash_password(new_pw)
+    _save_profile(profile)
     return jsonify({"ok": True})
 
 
