@@ -517,30 +517,6 @@ TOOLS = [
         },
     },
     {
-        "name": "browse_url",
-        "description": (
-            "Visit any URL and return its full text content. Use this to read articles, "
-            "company pages, news, LinkedIn profiles, pricing pages, or any public web page. "
-            "Returns the page title and cleaned text. Great for research on a specific URL."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "The full URL to visit (must start with http:// or https://).",
-                },
-                "extract": {
-                    "type": "string",
-                    "description": "Optional hint for what to extract: 'full' (default), 'links', or 'tables'.",
-                    "enum": ["full", "links", "tables"],
-                    "default": "full",
-                },
-            },
-            "required": ["url"],
-        },
-    },
-    {
         "name": "create_gmail_drafts",
         "description": (
             "Create Gmail drafts from the outreach emails so the user can review and send them manually from Gmail. "
@@ -1911,106 +1887,6 @@ def _compute_expansion_probability(data):
     }
 
 
-def browse_url(url, extract="full"):
-    """
-    Visit any public URL and return its text content.
-    Tries a fast requests-based fetch first; falls back to Playwright for
-    JS-heavy pages.
-    """
-    import re as _re
-
-    if not url.startswith("http://") and not url.startswith("https://"):
-        url = "https://" + url
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-
-    html = None
-
-    # ── Fast path: plain HTTP ─────────────────────────────────────────────────
-    try:
-        r = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
-        if r.status_code == 200:
-            html = r.text
-    except Exception:
-        pass
-
-    # ── Fallback: headless Playwright ────────────────────────────────────────
-    if not html:
-        try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as pw:
-                browser = pw.chromium.launch(
-                    headless=True,
-                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-                )
-                ctx = browser.new_context(user_agent=headers["User-Agent"])
-                page = ctx.new_page()
-                page.goto(url, timeout=20000, wait_until="domcontentloaded")
-                page.wait_for_timeout(1500)
-                html = page.content()
-                browser.close()
-        except Exception as e:
-            return {"error": f"Could not fetch page: {e}", "url": url}
-
-    if not html:
-        return {"error": "Empty response from page", "url": url}
-
-    # ── Parse with BeautifulSoup ──────────────────────────────────────────────
-    try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "html.parser")
-
-        # Remove noisy tags
-        for tag in soup(["script", "style", "noscript", "svg", "img",
-                          "header", "footer", "nav", "aside"]):
-            tag.decompose()
-
-        title = soup.title.get_text(strip=True) if soup.title else ""
-
-        if extract == "links":
-            links = []
-            for a in soup.find_all("a", href=True):
-                href = a["href"].strip()
-                text = a.get_text(strip=True)
-                if href.startswith("http") and text:
-                    links.append({"text": text[:80], "href": href})
-            return {"url": url, "title": title, "links": links[:50]}
-
-        if extract == "tables":
-            tables = []
-            for tbl in soup.find_all("table"):
-                rows = []
-                for tr in tbl.find_all("tr"):
-                    cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
-                    if cells:
-                        rows.append(cells)
-                if rows:
-                    tables.append(rows)
-            return {"url": url, "title": title, "tables": tables[:10]}
-
-        # Default: full text
-        text = soup.get_text(separator="\n")
-        # Collapse blank lines
-        lines = [l.strip() for l in text.splitlines() if l.strip()]
-        text = "\n".join(lines)
-        # Limit to ~8 000 chars so it fits in context
-        if len(text) > 8000:
-            text = text[:8000] + "\n\n[…content truncated…]"
-
-        return {"url": url, "title": title, "text": text}
-
-    except Exception as e:
-        # Return raw stripped text as last resort
-        clean = _re.sub(r"<[^>]+>", " ", html)
-        clean = _re.sub(r"\s+", " ", clean).strip()[:8000]
-        return {"url": url, "title": "", "text": clean}
-
-
 def generate_prospecting_report(title="Tenant Prospecting Report", subtitle="", summary=""):
     """
     Generate a branded HTML prospecting report from _leads_store.
@@ -2200,7 +2076,7 @@ TOOL_MAP = {
     "send_gmail_email":       send_gmail_email,
     "create_gmail_drafts":    create_gmail_drafts,
     "research_company":           research_company,
-    "browse_url":                 browse_url,
+
     "generate_prospecting_report": generate_prospecting_report,
 }
 
