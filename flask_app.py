@@ -1644,6 +1644,7 @@ def enrich_leads_batch(leads=None):
     shared list; returns the fully enriched leads list and saves to CSV.
     """
     import concurrent.futures
+    global _leads_store
 
     # Fallback: if model passed empty/missing leads, use whatever search just stored
     if not leads:
@@ -1762,7 +1763,6 @@ def enrich_leads_batch(leads=None):
     # Keep all leads regardless of Sunbiz status — inactive flag shown in UI
 
     # Save to CSV
-    global _leads_store
     _leads_store = enriched
     _save_leads_to_file(enriched)
 
