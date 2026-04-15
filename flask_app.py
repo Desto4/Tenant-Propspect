@@ -17,11 +17,8 @@ try:
 except ImportError:
     pass
 
-import hashlib, secrets
-from functools import wraps
-
 import requests
-from flask import Flask, request, session, Response, send_file, jsonify, render_template, redirect
+from flask import Flask, request, session, Response, send_file, jsonify, render_template
 import anthropic
 
 # Gmail OAuth imports
@@ -52,8 +49,6 @@ def _load_profile():
         "role": "MMG Broker",
         "company": "MMG",
         "initials": "G",
-        "password_hash": _hash_password("admin"),
-        "salt": ""
     }
     if not os.path.exists(_PROFILE_FILE):
         return defaults
@@ -69,29 +64,6 @@ def _load_profile():
 def _save_profile(data):
     with open(_PROFILE_FILE, "w") as f:
         json.dump(data, f, indent=2)
-
-def _hash_password(password, salt=None):
-    if salt is None:
-        salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
-    return f"{salt}:{hashed}"
-
-def _check_password(password, stored_hash):
-    try:
-        salt, hashed = stored_hash.split(":", 1)
-        return _hash_password(password, salt) == stored_hash
-    except Exception:
-        # Legacy plain-text fallback
-        return password == stored_hash
-
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get("logged_in"):
-            from flask import redirect, url_for
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated
 
 # Gmail OAuth storage (persisted to file so server restarts don't lose it)
 _GMAIL_TOKEN_FILE   = os.path.join(os.path.dirname(__file__), ".gmail_token.json")
@@ -2256,7 +2228,6 @@ def add_cors(response):
 
 
 @app.route("/")
-@login_required
 def index():
     return render_template("index.html")
 
@@ -2640,29 +2611,7 @@ def gmail_disconnect():
     return jsonify({"ok": True})
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    error = None
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        password = data.get("password", "")
-        profile = _load_profile()
-        if _check_password(password, profile.get("password_hash", "")):
-            session["logged_in"] = True
-            session["user_name"] = profile.get("full_name", "Gabe")
-            return jsonify({"ok": True})
-        return jsonify({"error": "Incorrect password"}), 401
-    return render_template("login.html")
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
-
 @app.route("/api/profile", methods=["GET", "POST"])
-@login_required
 def api_profile():
     if request.method == "GET":
         p = _load_profile()
@@ -2680,23 +2629,6 @@ def api_profile():
     return jsonify({"ok": True, "initials": profile["initials"]})
 
 
-@app.route("/api/change_password", methods=["POST"])
-@login_required
-def api_change_password():
-    data = request.get_json(silent=True) or {}
-    current = data.get("current_password", "")
-    new_pw  = data.get("new_password", "")
-    confirm = data.get("confirm_password", "")
-    profile = _load_profile()
-    if not _check_password(current, profile.get("password_hash", "")):
-        return jsonify({"error": "Current password is incorrect"}), 400
-    if len(new_pw) < 6:
-        return jsonify({"error": "New password must be at least 6 characters"}), 400
-    if new_pw != confirm:
-        return jsonify({"error": "Passwords do not match"}), 400
-    profile["password_hash"] = _hash_password(new_pw)
-    _save_profile(profile)
-    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

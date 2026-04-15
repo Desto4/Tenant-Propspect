@@ -462,17 +462,9 @@
                             class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-gray-100 text-gray-900 transition-colors text-left">
                             <i class="fa-regular fa-circle-user w-4 text-center text-gray-500"></i> General
                         </button>
-                        <button onclick="showSettingsTab('security')" data-tab="security"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
-                            <i class="fa-solid fa-lock w-4 text-center text-gray-400"></i> Security
-                        </button>
                         <button onclick="showSettingsTab('notifications')" data-tab="notifications"
                             class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
                             <i class="fa-regular fa-bell w-4 text-center text-gray-400"></i> Notifications
-                        </button>
-                        <button onclick="showSettingsTab('sessions')" data-tab="sessions"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
-                            <i class="fa-regular fa-desktop w-4 text-center text-gray-400"></i> Sessions
                         </button>
                     </nav>
                 </div>
@@ -530,30 +522,6 @@
                         </div>
                     </div>
 
-                    <!-- Security tab -->
-                    <div id="settings-security" class="max-w-xl hidden">
-                        <h2 class="text-2xl font-bold text-gray-900">Security</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Change your login password.</p>
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6 space-y-5">
-                            <div class="flex items-center gap-6">
-                                <label class="w-40 text-sm text-gray-500 flex-shrink-0">Current password</label>
-                                <input id="pw-current" type="password" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="••••••••">
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-40 text-sm text-gray-500 flex-shrink-0">New password</label>
-                                <input id="pw-new" type="password" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Min. 6 characters">
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-40 text-sm text-gray-500 flex-shrink-0">Confirm password</label>
-                                <input id="pw-confirm" type="password" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Repeat new password">
-                            </div>
-                        </div>
-                        <div id="pw-msg" class="hidden mt-3 text-sm font-medium"></div>
-                        <div class="flex justify-end mt-6">
-                            <button onclick="changePassword()" class="bg-gray-900 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-xl text-sm transition-colors">Update password</button>
-                        </div>
-                    </div>
-
                     <!-- Notifications tab -->
                     <div id="settings-notifications" class="max-w-xl hidden">
                         <h2 class="text-2xl font-bold text-gray-900">Notifications</h2>
@@ -561,23 +529,6 @@
                         <div class="bg-white border border-gray-200 rounded-2xl p-6 text-sm text-gray-400 text-center py-12">Coming soon</div>
                     </div>
 
-                    <!-- Sessions tab -->
-                    <div id="settings-sessions" class="max-w-xl hidden">
-                        <h2 class="text-2xl font-bold text-gray-900">Sessions</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Active login sessions.</p>
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-3">
-                                    <i class="fa-solid fa-desktop text-gray-400"></i>
-                                    <div>
-                                        <p class="text-sm font-medium text-gray-800">Current session</p>
-                                        <p class="text-xs text-gray-400">Active now · This device</p>
-                                    </div>
-                                </div>
-                                <button onclick="fetch('/logout').then(()=>window.location='/login')" class="text-xs text-red-500 hover:text-red-700 font-medium">Sign out</button>
-                            </div>
-                        </div>
-                    </div>
 
                 </div>
             </div>
@@ -2292,36 +2243,6 @@ async function saveProfile() {
     }
 }
 
-async function changePassword() {
-    const body = {
-        current_password:  document.getElementById('pw-current').value,
-        new_password:      document.getElementById('pw-new').value,
-        confirm_password:  document.getElementById('pw-confirm').value,
-    };
-    const msgEl = document.getElementById('pw-msg');
-    try {
-        const resp = await fetch('/api/change_password', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(body)
-        });
-        const data = await resp.json();
-        msgEl.classList.remove('hidden');
-        if (data.ok) {
-            msgEl.textContent = '✓ Password updated successfully';
-            msgEl.className = 'mt-3 text-sm text-teal-600 font-medium';
-            ['pw-current','pw-new','pw-confirm'].forEach(id => document.getElementById(id).value = '');
-        } else {
-            msgEl.textContent = data.error || 'Error updating password';
-            msgEl.className = 'mt-3 text-sm text-red-500 font-medium';
-        }
-        setTimeout(() => msgEl.classList.add('hidden'), 4000);
-    } catch(e) {
-        msgEl.textContent = 'Connection error';
-        msgEl.className = 'mt-3 text-sm text-red-500 font-medium';
-        msgEl.classList.remove('hidden');
-    }
-}
 
 async function saveConfig() {
     const body = {
