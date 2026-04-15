@@ -235,11 +235,11 @@ TOOLS = [
     {
         "name": "search_businesses_maps",
         "description": (
-            "PRIMARY lead discovery tool. Call this EXACTLY ONCE per lead generation request — "
-            "never call it multiple times for the same request. "
+            "PRIMARY lead discovery tool. Call this EXACTLY ONCE per lead generation request. "
             "Searches Google Maps for businesses by keyword and location using a real browser. "
-            "Returns structured data: trade name, address, city, state, phone, website, rating, review count. "
-            "IMMEDIATELY after this call, pass the result into enrich_leads_batch — do not stop or respond first."
+            "Returns {leads: [...], total: N}. "
+            "After receiving the result, call enrich_leads_batch in your NEXT tool call, "
+            "passing result['leads'] as the leads parameter."
         ),
         "input_schema": {
             "type": "object",
@@ -286,14 +286,14 @@ TOOLS = [
     {
         "name": "enrich_leads_batch",
         "description": (
-            "REQUIRED Step 2 — must be called immediately after search_businesses_maps, every time. "
+            "Step 2 of lead generation — call this after search_businesses_maps returns results. "
+            "Pass the leads array from the search result. "
             "Enriches every lead in parallel with all 15 required fields: "
             "(1) Sunbiz: entity/corporate name, formation date, years in business, status, owner name, registered agent; "
             "(2) Website scrape: general email, Instagram URL, Facebook URL; "
             "(3) Google Maps: rating + review count; "
             "(4) Web search: owner email + cell phone, registered agent email + cell phone. "
-            "Pass the complete, unmodified leads array from search_businesses_maps. "
-            "NEVER skip this step. NEVER call sunbiz_lookup / scrape_website_contact / get_google_reviews individually."
+            "NEVER call sunbiz_lookup / scrape_website_contact / get_google_reviews individually."
         ),
         "input_schema": {
             "type": "object",
@@ -743,6 +743,9 @@ def search_businesses_maps(keyword, location, num_results=10):
     except Exception as e:
         return {"error": str(e), "businesses": []}
 
+    # Pre-store raw results so enrich_leads_batch can fall back to them
+    global _leads_store
+    _leads_store = businesses
     return {"leads": businesses, "total": len(businesses)}
 
 
@@ -1634,13 +1637,19 @@ def _find_person_contact(name, business_name="", city="", state=""):
     return {"email": "", "phone": ""}
 
 
-def enrich_leads_batch(leads):
+def enrich_leads_batch(leads=None):
     """
     Enrich every lead in the list with Sunbiz, website contact info, and
     Google Maps reviews — all in one tool call.  Yields progress via a
     shared list; returns the fully enriched leads list and saves to CSV.
     """
     import concurrent.futures
+
+    # Fallback: if model passed empty/missing leads, use whatever search just stored
+    if not leads:
+        leads = list(_leads_store)
+    if not leads:
+        return {"error": "No leads to enrich. Run search_businesses_maps first.", "leads": []}
 
     enriched = []
 
@@ -2235,14 +2244,13 @@ Find business prospects (tenants) who may be looking to open a new location, exp
 
 ## Workflow
 
-**Finding new leads — STRICT 2-step process, no variations:**
-Step 1 — Call search_businesses_maps ONCE with the keyword and location the user specified. Do NOT call it again with a different query or location variation.
-Step 2 — Immediately call enrich_leads_batch, passing the entire leads array returned from Step 1. Do NOT skip this step. Do NOT respond before calling it.
-Step 3 — Reply with ONE sentence: "Found and enriched N [type] in [location] — results are in the table below."
+**Finding new leads — 2-step process:**
+Step 1 — Call search_businesses_maps once with the keyword and location the user specified. Do not call it multiple times for the same request.
+Step 2 — Once you receive the search results, call enrich_leads_batch in your next tool call, passing result["leads"] as the leads parameter.
+Step 3 — After enrichment completes, reply with ONE sentence: "Found and enriched N [type] in [location] — results are in the table below."
 
-NEVER call search_businesses_maps more than once per user request.
-NEVER call search_businesses_maps without immediately following it with enrich_leads_batch.
-NEVER call sunbiz_lookup, scrape_website_contact, or get_google_reviews individually.
+Do not call search_businesses_maps and enrich_leads_batch in the same response — they must be separate sequential calls because enrich_leads_batch needs the output of search_businesses_maps.
+Never call sunbiz_lookup, scrape_website_contact, or get_google_reviews individually.
 Only use apollo_search_people if the user explicitly asks for it.
 
 **Writing outreach emails:**
