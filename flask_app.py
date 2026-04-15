@@ -516,7 +516,28 @@ def search_businesses_maps(keyword, location, num_results=10):
 
             search_url = f"https://www.google.com/maps/search/{quote_plus(query)}"
             page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-            time.sleep(3)
+            time.sleep(2)
+
+            # ── Handle Google consent page (shown in some regions) ──
+            if "consent.google.com" in page.url:
+                try:
+                    # Accept all / Agree button
+                    for selector in [
+                        'button[aria-label*="Accept all"]',
+                        'button[aria-label*="Agree"]',
+                        'form[action*="consent"] button',
+                        '.VfPpkd-LgbsSe',
+                    ]:
+                        btn = page.query_selector(selector)
+                        if btn:
+                            btn.click()
+                            page.wait_for_load_state("domcontentloaded", timeout=10000)
+                            time.sleep(2)
+                            break
+                except Exception:
+                    pass
+
+            time.sleep(2)
 
             # ── Collect card URLs upfront (before any navigation makes them stale) ──
             # Fetch 2x as buffer — inactive Sunbiz leads get filtered out later
@@ -2143,9 +2164,12 @@ def run_agent_anthropic(user_message: str, history: list,
                         for l in _leads_store if (l.get('owner_email') or l.get('general_email'))
                     ]
                 yield f"data: {json.dumps(start_evt)}\n\n"
+                print(f"[TOOL] calling {tc.name} with {list(tc.input.keys())}", flush=True)
                 result = run_tool(tc.name, tc.input,
                                   apollo_key=apollo_key,
                                   hubspot_token=hubspot_token)
+                leads_count = len(result.get("leads", [])) if isinstance(result, dict) else "?"
+                print(f"[TOOL] {tc.name} done → leads={leads_count} error={result.get('error') if isinstance(result, dict) else None}", flush=True)
                 yield f"data: {json.dumps({'type': 'tool_end', 'name': tc.name, 'result': result})}\n\n"
                 if isinstance(result, dict) and result.get("leads"):
                     total_leads += len(result["leads"])
