@@ -16,14 +16,11 @@
 
         /* Typing animation for streaming text */
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-        .typing-blink {
-            display: inline-block;
-            width: 2px; height: 1em;
-            background: #14b8a6;
-            margin-left: 2px;
-            vertical-align: text-bottom;
+        .typing-cursor::after {
+            content: '|';
             animation: blink 1s step-start infinite;
-            border-radius: 1px;
+            margin-left: 1px;
+            color: #14b8a6;
         }
 
         /* Markdown prose styles */
@@ -71,268 +68,110 @@
         .agent-content tr:last-child td { border-bottom: none; }
         .agent-content tr:hover td { background: #f9fafb; }
 
-        /* Progress card dot bounce */
-        @keyframes dot-bounce {
-            0%,80%,100%{ transform: translateY(0); opacity:0.4; }
-            40%{ transform: translateY(-4px); opacity:1; }
+        /* Tool chip pulse */
+        @keyframes pulse-bg {
+            0%,100%{ background-color: rgb(239 246 255); }
+            50%{ background-color: rgb(219 234 254); }
         }
-        .dot-bounce { animation: dot-bounce 1.2s ease-in-out infinite; }
+        .tool-running { animation: pulse-bg 1.2s ease-in-out infinite; }
     </style>
 </head>
 <body class="flex h-screen bg-white text-gray-800 overflow-hidden">
 
     <!-- ── Sidebar ─────────────────────────────────────────────────── -->
-    <aside class="w-72 bg-[#1a2130] text-gray-400 flex flex-col justify-between flex-shrink-0">
-        <div class="p-4 space-y-3">
-
-            <!-- Agent selector dropdown -->
-            <div class="relative">
-                <button onclick="toggleAgentDropdown()" class="w-full bg-[#242d3d] hover:bg-[#2a3547] border border-[#2e3a4e] rounded-2xl px-4 py-3 flex items-center gap-3 transition-colors">
-                    <div class="w-11 h-11 bg-[#1e3a35] rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i id="agent-icon" class="fa-solid fa-magnifying-glass-location text-teal-400 text-lg"></i>
-                    </div>
-                    <div class="flex-1 text-left min-w-0">
-                        <p id="agent-name" class="text-white font-semibold text-sm truncate">Prospecting Agent</p>
-                        <p id="agent-desc" class="text-gray-500 text-xs truncate">Tenant discovery & outreach</p>
-                    </div>
-                    <i class="fa-solid fa-chevron-down text-gray-500 text-xs flex-shrink-0"></i>
-                </button>
-
-                <!-- Dropdown menu -->
-                <div id="agent-dropdown" class="hidden absolute top-full left-0 right-0 mt-1 bg-[#242d3d] border border-[#2e3a4e] rounded-2xl overflow-hidden z-50 shadow-xl">
-                    <div class="p-2 space-y-1">
-                        <button onclick="selectAgent('prospecting')" class="agent-option w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#2a3547] transition-colors text-left" data-agent="prospecting">
-                            <div class="w-9 h-9 bg-[#1e3a35] rounded-lg flex items-center justify-center flex-shrink-0">
-                                <i class="fa-solid fa-magnifying-glass-location text-teal-400"></i>
-                            </div>
-                            <div>
-                                <p class="text-white text-sm font-medium">Prospecting Agent</p>
-                                <p class="text-gray-500 text-xs">Tenant discovery & outreach</p>
-                            </div>
-                        </button>
-                        <button onclick="selectAgent('market')" class="agent-option w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#2a3547] transition-colors text-left" data-agent="market">
-                            <div class="w-9 h-9 bg-[#1e2d45] rounded-lg flex items-center justify-center flex-shrink-0">
-                                <i class="fa-solid fa-chart-line text-blue-400"></i>
-                            </div>
-                            <div>
-                                <p class="text-white text-sm font-medium">Market Research Agent</p>
-                                <p class="text-gray-500 text-xs">CRE trends & vacancy data</p>
-                            </div>
-                        </button>
-                        <button onclick="selectAgent('outreach')" class="agent-option w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#2a3547] transition-colors text-left" data-agent="outreach">
-                            <div class="w-9 h-9 bg-[#2d1e3a] rounded-lg flex items-center justify-center flex-shrink-0">
-                                <i class="fa-solid fa-envelope-open-text text-purple-400"></i>
-                            </div>
-                            <div>
-                                <p class="text-white text-sm font-medium">Outreach Agent</p>
-                                <p class="text-gray-500 text-xs">Email campaigns & follow-ups</p>
-                            </div>
-                        </button>
-                        <button onclick="selectAgent('lease')" class="agent-option w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#2a3547] transition-colors text-left" data-agent="lease">
-                            <div class="w-9 h-9 bg-[#3a2a1e] rounded-lg flex items-center justify-center flex-shrink-0">
-                                <i class="fa-solid fa-file-contract text-orange-400"></i>
-                            </div>
-                            <div>
-                                <p class="text-white text-sm font-medium">Lease Analysis Agent</p>
-                                <p class="text-gray-500 text-xs">Review & summarize leases</p>
-                            </div>
-                        </button>
-                    </div>
+    <aside class="w-64 bg-[#0f172a] text-gray-400 flex flex-col justify-between flex-shrink-0">
+        <div>
+            <div class="h-16 flex items-center px-6 border-b border-gray-800">
+                <div class="bg-teal-500 text-white rounded p-1 mr-3 flex items-center justify-center h-8 w-8">
+                    <i class="fa-solid fa-building"></i>
                 </div>
+                <span class="text-white font-semibold text-lg tracking-wide">MMG Agent</span>
             </div>
 
-            <!-- New task button -->
-            <button onclick="newTask()" class="w-full bg-teal-500 hover:bg-teal-400 text-white font-semibold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-colors text-sm">
-                <i class="fa-solid fa-plus"></i> New task
-            </button>
+            <div class="p-4 space-y-4">
+                <button onclick="newTask()" class="w-full bg-teal-500 hover:bg-teal-400 text-white font-medium py-2 px-4 rounded-md flex items-center shadow-sm transition-colors">
+                    <i class="fa-solid fa-plus mr-2"></i> New task
+                </button>
 
-            <!-- Navigation -->
-            <div class="pt-2">
-                <p class="text-[10px] font-semibold text-gray-600 uppercase tracking-widest px-3 mb-2">Navigation</p>
-                <nav class="space-y-0.5">
-                    <a onclick="showPage('tasklist')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer nav-link" data-page="tasklist">
-                        <i class="fa-regular fa-square-check w-5 text-center"></i>
-                        <span class="text-sm font-medium">Tasks</span>
+                <nav class="space-y-1 mt-6">
+                    <a onclick="showPage('tasks')" class="flex items-center px-3 py-2 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer nav-link" data-page="tasks">
+                        <i class="fa-regular fa-square-check w-6 mr-2"></i> Tasks
                     </a>
-                    <a onclick="showPage('tasks')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer">
-                        <i class="fa-solid fa-bolt w-5 text-center"></i>
-                        <span class="text-sm font-medium">Quick Actions</span>
+                    <a onclick="showPage('connectors')" class="flex items-center px-3 py-2 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer nav-link" data-page="connectors">
+                        <i class="fa-solid fa-link w-6 mr-2"></i> Connectors
                     </a>
-                    <a onclick="showPage('files')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer nav-link" data-page="files">
-                        <i class="fa-regular fa-folder w-5 text-center"></i>
-                        <span class="text-sm font-medium">Files</span>
-                    </a>
-                    <a onclick="showPage('connectors')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer nav-link" data-page="connectors">
-                        <i class="fa-solid fa-link w-5 text-center"></i>
-                        <span class="text-sm font-medium">Connectors</span>
-                    </a>
-                    <a onclick="showPage('performance')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer nav-link" data-page="performance">
-                        <i class="fa-solid fa-chart-bar w-5 text-center"></i>
-                        <span class="text-sm font-medium">Performance</span>
-                    </a>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer relative">
-                        <i class="fa-regular fa-bell w-5 text-center"></i>
-                        <span class="text-sm font-medium">Notifications</span>
-                        <span class="ml-auto bg-teal-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">3</span>
+                    <a onclick="showPage('performance')" class="flex items-center px-3 py-2 hover:text-white hover:bg-gray-800 rounded-md transition-colors cursor-pointer nav-link" data-page="performance">
+                        <i class="fa-solid fa-chart-bar w-6 mr-2"></i> Performance
                     </a>
                 </nav>
             </div>
         </div>
 
-        <!-- Bottom user profile -->
-        <div class="p-4 border-t border-[#242d3d]">
-            <div class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] cursor-pointer transition-colors" onclick="showPage('settings')">
-                <div id="sidebar-avatar" class="bg-teal-900 text-teal-400 rounded-full h-8 w-8 flex items-center justify-center font-bold text-xs flex-shrink-0">G</div>
-                <div class="flex-1 min-w-0">
-                    <p id="sidebar-name" class="text-white text-sm font-medium truncate">Gabe</p>
-                    <p id="sidebar-role" class="text-xs truncate">MMG Broker</p>
-                </div>
-                <i class="fa-solid fa-chevron-up text-xs text-gray-600"></i>
+        <div class="p-4 border-t border-gray-800 flex items-center cursor-pointer hover:bg-gray-800 transition-colors" onclick="toggleSettings()">
+            <div class="bg-teal-900 text-teal-400 rounded-full h-8 w-8 flex items-center justify-center font-bold text-xs mr-3">JD</div>
+            <div class="flex-1">
+                <p class="text-white text-sm font-medium">James Deal</p>
+                <p class="text-xs">Broker</p>
             </div>
+            <i class="fa-solid fa-chevron-down text-xs"></i>
         </div>
     </aside>
 
     <!-- ── Main area ───────────────────────────────────────────────── -->
     <main class="flex-1 flex flex-col relative h-full overflow-hidden">
 
-        <!-- TASKS PAGE (Hero landing) -->
-        <div id="page-tasks" class="flex flex-col h-full bg-white">
-            <!-- Top bar with history link -->
-            <header class="h-14 flex items-center justify-between px-8 flex-shrink-0">
-                <div></div>
-                <div class="flex items-center gap-4">
-                    <div id="download-bar" class="hidden flex gap-3">
-                        <a href="/api/download/leads" class="inline-flex items-center gap-2 text-xs text-gray-500 hover:text-teal-600 font-medium">
-                            <i class="fa-solid fa-download"></i> leads.csv
-                        </a>
-                        <a href="/api/download/outreach" class="inline-flex items-center gap-2 text-xs text-gray-500 hover:text-teal-600 font-medium">
-                            <i class="fa-solid fa-download"></i> outreach.csv
-                        </a>
-                    </div>
-                    <button onclick="toggleHistoryPanel()" class="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1.5">
-                        <i class="fa-solid fa-clock-rotate-left"></i> History
+        <!-- TASKS PAGE -->
+        <div id="page-tasks" class="flex flex-col h-full">
+            <header class="h-16 flex items-center justify-between px-8 border-b border-gray-200 bg-white z-10 flex-shrink-0">
+                <div>
+                    <h1 class="font-semibold text-gray-800 text-lg">Tasks</h1>
+                    <p class="text-xs text-gray-400">History of all agent sessions and generated outputs.</p>
+                </div>
+                <button onclick="newTask()" class="bg-gray-900 hover:bg-gray-700 text-white text-sm font-medium py-2 px-4 rounded-md flex items-center">
+                    <i class="fa-solid fa-plus mr-2"></i> New task
+                </button>
+            </header>
+            <!-- Welcome banner -->
+            <div class="px-8 pt-8">
+                <div class="max-w-4xl bg-gradient-to-r from-teal-500 to-teal-600 rounded-2xl px-8 py-6 text-white shadow-sm">
+                    <h2 class="text-2xl font-bold mb-1">Welcome back, Gabe 👋</h2>
+                    <p class="text-teal-100 text-sm">Ready to find your next tenants? Start a new task to search for leads, enrich contact data, and upload to HubSpot.</p>
+                    <button onclick="newTask()" class="mt-4 bg-white text-teal-600 font-semibold text-sm px-5 py-2 rounded-lg hover:bg-teal-50 transition-colors">
+                        Start prospecting →
                     </button>
                 </div>
-            </header>
-
-            <!-- Hero section -->
-            <div class="flex-1 flex flex-col items-center justify-center px-6 pb-20">
-                <!-- Logo + name -->
-                <div class="flex items-center gap-3 mb-8">
-                    <div class="w-12 h-12 bg-[#1a2e2a] rounded-2xl flex items-center justify-center shadow-lg">
-                        <i class="fa-solid fa-building text-teal-400 text-lg"></i>
-                    </div>
-                    <span class="text-xl font-semibold text-gray-800 tracking-tight">MMG Prospecting Agent</span>
-                </div>
-
-                <!-- Headline -->
-                <h1 class="text-5xl font-bold text-gray-900 text-center mb-3 tracking-tight leading-tight">
-                    Find your next tenant.
-                </h1>
-                <p class="text-gray-400 text-lg text-center mb-10">Florida CRE tenant intelligence, on demand.</p>
-
-                <!-- Search input -->
-                <div class="w-full max-w-2xl">
-                    <div class="relative bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-                        <textarea id="hero-input" rows="3"
-                            placeholder="Ask anything — find tenants, enrich leads, push to HubSpot..."
-                            class="w-full px-6 pt-5 pb-12 text-gray-700 text-base resize-none focus:outline-none bg-transparent"
-                            onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); heroSend(); }"></textarea>
-                        <div class="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-                            <div class="flex items-center gap-3 text-xs text-gray-400">
-                                <span>Real-time data</span>
-                                <span>·</span>
-                                <span>Florida business registry</span>
-                                <span>·</span>
-                                <span>Apollo</span>
-                                <span>·</span>
-                                <span>HubSpot</span>
-                            </div>
-                            <button onclick="heroSend()"
-                                class="bg-gray-800 hover:bg-gray-700 text-white w-8 h-8 rounded-lg flex items-center justify-center transition-colors">
-                                <i class="fa-solid fa-arrow-up text-xs"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Suggestion chips -->
-                    <div class="flex flex-wrap gap-2 mt-4 justify-center">
-                        <button onclick="heroFill('Find nail salons in Miami-Dade')"
-                            class="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 text-sm px-4 py-2 rounded-full hover:border-teal-400 hover:text-teal-600 transition-colors shadow-sm">
-                            <i class="fa-solid fa-scissors text-teal-500 text-xs"></i> Nail salons — Miami-Dade
-                        </button>
-                        <button onclick="heroFill('Find restaurants in Brickell')"
-                            class="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 text-sm px-4 py-2 rounded-full hover:border-teal-400 hover:text-teal-600 transition-colors shadow-sm">
-                            <i class="fa-solid fa-utensils text-teal-500 text-xs"></i> Restaurants — Brickell
-                        </button>
-                        <button onclick="heroFill('Find fitness studios in Wynwood')"
-                            class="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 text-sm px-4 py-2 rounded-full hover:border-teal-400 hover:text-teal-600 transition-colors shadow-sm">
-                            <i class="fa-solid fa-dumbbell text-teal-500 text-xs"></i> Fitness studios — Wynwood
-                        </button>
-                        <button onclick="heroFill('Find medical offices in Coral Gables')"
-                            class="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 text-sm px-4 py-2 rounded-full hover:border-teal-400 hover:text-teal-600 transition-colors shadow-sm">
-                            <i class="fa-solid fa-stethoscope text-teal-500 text-xs"></i> Medical — Coral Gables
-                        </button>
-                    </div>
-                </div>
             </div>
-
-            <!-- History panel (slide-in from right, hidden by default) -->
-            <div id="history-panel" class="hidden fixed inset-y-0 right-0 w-80 bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col">
-                <div class="h-14 flex items-center justify-between px-5 border-b border-gray-100">
-                    <span class="font-semibold text-gray-800 text-sm">History</span>
-                    <button onclick="toggleHistoryPanel()" class="text-gray-400 hover:text-gray-600">&times;</button>
-                </div>
-                <div class="flex-1 overflow-y-auto p-4">
-                    <table class="w-full text-left text-xs">
+            <div class="flex-1 overflow-y-auto p-8">
+                <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-xs text-gray-400 uppercase bg-gray-50 border-b border-gray-100">
+                            <tr>
+                                <th class="px-6 py-3 font-medium">Task</th>
+                                <th class="px-6 py-3 font-medium">Status</th>
+                                <th class="px-6 py-3 font-medium">Outputs</th>
+                                <th class="px-6 py-3 font-medium">Time</th>
+                                <th class="px-6 py-3 font-medium"></th>
+                            </tr>
+                        </thead>
                         <tbody id="tasks-tbody">
-                            <tr><td class="py-6 text-center text-gray-400">No sessions yet.</td></tr>
+                            <tr><td colspan="5" class="px-6 py-8 text-center text-gray-400">No tasks yet. Click "New task" to get started.</td></tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Download buttons (shown when files are available) -->
+                <div id="download-bar" class="hidden mt-4 flex gap-3">
+                    <a href="/api/download/leads" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg hover:bg-gray-50 shadow-sm">
+                        <i class="fa-solid fa-download text-teal-500"></i> Download leads.csv
+                    </a>
+                    <a href="/api/download/outreach" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg hover:bg-gray-50 shadow-sm">
+                        <i class="fa-solid fa-download text-teal-500"></i> Download outreach_drafts.csv
+                    </a>
                 </div>
             </div>
         </div>
 
         <!-- SESSION PAGE -->
-        <!-- TASK LIST PAGE -->
-        <div id="page-tasklist" class="flex flex-col h-full hidden bg-gray-50">
-            <header class="h-16 flex items-center justify-between px-8 border-b border-gray-200 bg-white z-10 flex-shrink-0">
-                <span class="font-semibold text-gray-800 text-base">Tasks</span>
-                <div class="flex items-center gap-3">
-                    <button class="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm transition-colors">
-                        <i class="fa-solid fa-sliders text-xs"></i> Settings
-                    </button>
-                    <span class="flex items-center gap-1.5 border border-teal-200 bg-teal-50 text-teal-600 text-xs font-semibold px-3 py-1.5 rounded-full">
-                        <span class="w-1.5 h-1.5 bg-teal-500 rounded-full animate-pulse"></span> Live
-                    </span>
-                </div>
-            </header>
-            <div class="flex-1 overflow-y-auto p-8">
-                <div class="max-w-4xl mx-auto">
-                    <div class="flex items-start justify-between mb-6">
-                        <div>
-                            <h1 class="text-2xl font-bold text-gray-900">Tasks</h1>
-                            <p class="text-sm text-gray-400 mt-0.5">History of all agent sessions and outputs.</p>
-                        </div>
-                        <button onclick="newTask()" class="bg-teal-500 hover:bg-teal-600 text-white text-sm font-semibold py-2.5 px-5 rounded-xl flex items-center gap-2 transition-colors shadow-sm">
-                            <i class="fa-solid fa-plus text-xs"></i> New task
-                        </button>
-                    </div>
-                    <div id="tasks-cards" class="space-y-3">
-                        <div class="bg-white border border-gray-200 rounded-xl px-6 py-8 text-center text-gray-400 text-sm">No tasks yet. Click "New task" to get started.</div>
-                    </div>
-                    <div id="download-bar" class="hidden flex gap-3 mt-4">
-                        <a href="/api/download/leads" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg hover:bg-gray-50 shadow-sm">
-                            <i class="fa-solid fa-download text-teal-500"></i> Download leads.csv
-                        </a>
-                        <a href="/api/download/outreach" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg hover:bg-gray-50 shadow-sm">
-                            <i class="fa-solid fa-download text-teal-500"></i> Download outreach_drafts.csv
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div id="page-session" class="flex flex-col h-full hidden">
             <header class="h-16 flex items-center justify-between px-8 border-b border-gray-200 bg-white z-10 flex-shrink-0">
                 <div class="flex items-center gap-3">
@@ -377,62 +216,6 @@
         </div>
 
         <!-- CONNECTORS PAGE -->
-        <!-- FILES PAGE -->
-        <div id="page-files" class="flex flex-col h-full hidden bg-gray-50">
-            <header class="h-14 flex items-center justify-between px-8 bg-white border-b border-gray-200 flex-shrink-0">
-                <span class="font-medium text-gray-800 text-sm">Files</span>
-                <div class="flex items-center gap-3">
-                    <button onclick="toggleSettings()" class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700">
-                        <i class="fa-solid fa-sliders text-xs"></i> Settings
-                    </button>
-                    <div class="flex items-center gap-1.5 border border-green-200 bg-white text-green-600 text-xs font-medium px-2.5 py-1 rounded-full">
-                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span> Live
-                    </div>
-                </div>
-            </header>
-            <div class="flex-1 overflow-y-auto px-8 py-8">
-                <h1 class="text-3xl font-bold text-gray-900 mb-1">Files</h1>
-                <p class="text-gray-400 text-sm mb-6">Documents and exports generated by the agent.</p>
-
-                <!-- Search + tabs + filter -->
-                <div class="flex items-center gap-4 mb-6">
-                    <div class="relative">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                        <input id="files-search" type="text" placeholder="Search files..."
-                            oninput="filterFiles()"
-                            class="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 w-52">
-                    </div>
-                    <div class="flex items-center bg-white border border-gray-200 rounded-xl overflow-hidden text-sm">
-                        <button onclick="setFileTab('all', this)" class="file-tab px-4 py-2 font-medium bg-gray-900 text-white transition-colors">All</button>
-                        <button onclick="setFileTab('csv', this)" class="file-tab px-4 py-2 text-gray-500 hover:text-gray-700 transition-colors">CSVs</button>
-                        <button onclick="setFileTab('email', this)" class="file-tab px-4 py-2 text-gray-500 hover:text-gray-700 transition-colors">Emails</button>
-                        <button onclick="setFileTab('pdf', this)" class="file-tab px-4 py-2 text-gray-500 hover:text-gray-700 transition-colors">PDFs</button>
-                    </div>
-                    <button onclick="loadFiles()" class="ml-auto flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 bg-white px-3 py-2 rounded-xl">
-                        <i class="fa-solid fa-arrows-rotate"></i> Refresh
-                    </button>
-                </div>
-
-                <!-- Files table -->
-                <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-gray-100">
-                                <th class="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider">File Details</th>
-                                <th class="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Source Task</th>
-                                <th class="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Size</th>
-                                <th class="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Date</th>
-                                <th class="px-6 py-3"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="files-tbody">
-                            <tr><td colspan="5" class="px-6 py-12 text-center text-gray-400 text-sm">No files yet. Run a search to generate exports.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
         <div id="page-connectors" class="flex flex-col h-full hidden">
             <header class="h-16 flex items-center px-8 border-b border-gray-200 bg-white z-10 flex-shrink-0">
                 <div>
@@ -441,145 +224,7 @@
                 </div>
             </header>
             <div class="flex-1 overflow-y-auto p-8">
-                <div id="connectors-grid" class="space-y-3 max-w-2xl"></div>
-            </div>
-        </div>
-
-        <!-- SETTINGS PAGE -->
-        <div id="page-settings" class="flex flex-col h-full hidden bg-gray-50">
-            <header class="h-16 flex items-center justify-between px-8 border-b border-gray-200 bg-white z-10 flex-shrink-0">
-                <span class="font-semibold text-gray-800 text-base">Settings</span>
-                <span class="flex items-center gap-1.5 border border-teal-200 bg-teal-50 text-teal-600 text-xs font-semibold px-3 py-1.5 rounded-full">
-                    <span class="w-1.5 h-1.5 bg-teal-500 rounded-full animate-pulse"></span> Live
-                </span>
-            </header>
-            <div class="flex flex-1 overflow-hidden">
-                <!-- Settings left nav -->
-                <div class="w-56 border-r border-gray-200 bg-white flex-shrink-0 p-6">
-                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Account</p>
-                    <nav class="space-y-1">
-                        <button onclick="showSettingsTab('general')" data-tab="general"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-gray-100 text-gray-900 transition-colors text-left">
-                            <i class="fa-regular fa-circle-user w-4 text-center text-gray-500"></i> General
-                        </button>
-                        <button onclick="showSettingsTab('security')" data-tab="security"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
-                            <i class="fa-solid fa-lock w-4 text-center text-gray-400"></i> Security
-                        </button>
-                        <button onclick="showSettingsTab('notifications')" data-tab="notifications"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
-                            <i class="fa-regular fa-bell w-4 text-center text-gray-400"></i> Notifications
-                        </button>
-                        <button onclick="showSettingsTab('sessions')" data-tab="sessions"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
-                            <i class="fa-regular fa-desktop w-4 text-center text-gray-400"></i> Sessions
-                        </button>
-                    </nav>
-                </div>
-
-                <!-- Settings content -->
-                <div class="flex-1 overflow-y-auto p-10">
-
-                    <!-- General tab -->
-                    <div id="settings-general" class="max-w-xl">
-                        <h2 class="text-2xl font-bold text-gray-900">General</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Manage your profile and account details.</p>
-
-                        <!-- Avatar + name -->
-                        <div class="flex items-center gap-5 mb-8">
-                            <div class="relative">
-                                <div id="settings-avatar" class="w-16 h-16 bg-gray-900 text-white rounded-2xl flex items-center justify-center text-2xl font-bold select-none">G</div>
-                                <button class="absolute -bottom-1 -right-1 w-6 h-6 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm">
-                                    <i class="fa-solid fa-camera text-gray-400 text-[9px]"></i>
-                                </button>
-                            </div>
-                            <div>
-                                <p id="settings-display-name" class="font-semibold text-gray-900 text-lg">Gabe</p>
-                                <p id="settings-display-email" class="text-sm text-gray-400"></p>
-                                <button class="text-sm text-teal-500 hover:text-teal-700 mt-0.5">Upload new photo</button>
-                            </div>
-                        </div>
-
-                        <!-- Form -->
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6 space-y-5">
-                            <div class="flex items-center gap-6">
-                                <label class="w-32 text-sm text-gray-500 flex-shrink-0">Full name</label>
-                                <div class="flex-1 relative">
-                                    <input id="profile-name" type="text" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Your name">
-                                    <button class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
-                                        <i class="fa-solid fa-ellipsis"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-32 text-sm text-gray-500 flex-shrink-0">Email address</label>
-                                <input id="profile-email" type="email" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="you@company.com">
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-32 text-sm text-gray-500 flex-shrink-0">Role</label>
-                                <input id="profile-role" type="text" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="e.g. Broker">
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-32 text-sm text-gray-500 flex-shrink-0">Company</label>
-                                <input id="profile-company" type="text" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="e.g. MMG Equity Partners">
-                            </div>
-                        </div>
-                        <div id="profile-msg" class="hidden mt-3 text-sm text-teal-600 font-medium"></div>
-                        <div class="flex justify-end mt-6">
-                            <button onclick="saveProfile()" class="bg-gray-900 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-xl text-sm transition-colors">Save changes</button>
-                        </div>
-                    </div>
-
-                    <!-- Security tab -->
-                    <div id="settings-security" class="max-w-xl hidden">
-                        <h2 class="text-2xl font-bold text-gray-900">Security</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Change your login password.</p>
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6 space-y-5">
-                            <div class="flex items-center gap-6">
-                                <label class="w-40 text-sm text-gray-500 flex-shrink-0">Current password</label>
-                                <input id="pw-current" type="password" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="••••••••">
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-40 text-sm text-gray-500 flex-shrink-0">New password</label>
-                                <input id="pw-new" type="password" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Min. 6 characters">
-                            </div>
-                            <div class="flex items-center gap-6">
-                                <label class="w-40 text-sm text-gray-500 flex-shrink-0">Confirm password</label>
-                                <input id="pw-confirm" type="password" class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Repeat new password">
-                            </div>
-                        </div>
-                        <div id="pw-msg" class="hidden mt-3 text-sm font-medium"></div>
-                        <div class="flex justify-end mt-6">
-                            <button onclick="changePassword()" class="bg-gray-900 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-xl text-sm transition-colors">Update password</button>
-                        </div>
-                    </div>
-
-                    <!-- Notifications tab -->
-                    <div id="settings-notifications" class="max-w-xl hidden">
-                        <h2 class="text-2xl font-bold text-gray-900">Notifications</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Manage how you receive alerts.</p>
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6 text-sm text-gray-400 text-center py-12">Coming soon</div>
-                    </div>
-
-                    <!-- Sessions tab -->
-                    <div id="settings-sessions" class="max-w-xl hidden">
-                        <h2 class="text-2xl font-bold text-gray-900">Sessions</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Active login sessions.</p>
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-3">
-                                    <i class="fa-solid fa-desktop text-gray-400"></i>
-                                    <div>
-                                        <p class="text-sm font-medium text-gray-800">Current session</p>
-                                        <p class="text-xs text-gray-400">Active now · This device</p>
-                                    </div>
-                                </div>
-                                <button onclick="fetch('/logout').then(()=>window.location='/login')" class="text-xs text-red-500 hover:text-red-700 font-medium">Sign out</button>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
+                <div id="connectors-grid" class="grid grid-cols-2 gap-4 max-w-3xl"></div>
             </div>
         </div>
 
@@ -797,7 +442,6 @@ function setStreamingUI(streaming) {
         sendBtn.classList.add('hidden');
         stopBtn.classList.remove('hidden');
         input.disabled = true;
-        input.blur();
     } else {
         sendBtn.classList.remove('hidden');
         stopBtn.classList.add('hidden');
@@ -808,24 +452,22 @@ function setStreamingUI(streaming) {
 
 function stopStreaming() {
     if (activeReader) {
-        try { activeReader.cancel(); } catch(e) {}
+        activeReader.cancel();
         activeReader = null;
     }
     isStreaming = false;
     setStreamingUI(false);
-    // Clean up progress card state so next session starts fresh
-    finalizeProgressCard();
-    // Remove cursor span from any open agent bubble
-    document.querySelectorAll('.typing-blink').forEach(el => el.remove());
-    // Append stop note to the correct container
-    const container = document.getElementById('messages-container');
-    if (container) {
-        const stopNote = document.createElement('div');
-        stopNote.className = 'text-xs text-gray-400 text-center py-2';
-        stopNote.textContent = '⏹ Stopped';
-        container.appendChild(stopNote);
-        container.scrollTop = container.scrollHeight;
-    }
+    // Mark any running tool chips as stopped
+    document.querySelectorAll('.tool-running').forEach(el => {
+        el.classList.remove('tool-running');
+        el.querySelector('.tool-status')?.classList.add('text-red-400');
+    });
+    const msgs = document.getElementById('chat-messages');
+    const stopNote = document.createElement('div');
+    stopNote.className = 'text-xs text-gray-400 text-center py-1';
+    stopNote.textContent = '⏹ Stopped';
+    msgs.appendChild(stopNote);
+    msgs.scrollTop = msgs.scrollHeight;
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
@@ -851,7 +493,7 @@ function scrollToBottom() {
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 function showPage(page) {
-    ['tasks','tasklist','files','session','connectors','performance','settings'].forEach(p => {
+    ['tasks','session','connectors','performance'].forEach(p => {
         document.getElementById(`page-${p}`).classList.add('hidden');
     });
     document.getElementById(`page-${page}`).classList.remove('hidden');
@@ -861,181 +503,9 @@ function showPage(page) {
         el.classList.toggle('bg-gray-800', el.dataset.page === page);
     });
     if (page === 'connectors') loadConnectors();
-    if (page === 'files') loadFiles();
-    if (page === 'settings') loadProfile();
-}
-
-// ── Files page ─────────────────────────────────────────────────────────────
-let _allFiles = [];
-let _activeFileTab = 'all';
-
-async function loadFiles() {
-    const tbody = document.getElementById('files-tbody');
-    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-10 text-center text-gray-400 text-sm"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Loading files…</td></tr>';
-    try {
-        const resp = await fetch('/api/files');
-        const data = await resp.json();
-        _allFiles = data.files || [];
-        renderFiles();
-    } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-10 text-center text-red-400 text-sm">Failed to load files.</td></tr>';
-    }
-}
-
-function setFileTab(tab, btn) {
-    _activeFileTab = tab;
-    document.querySelectorAll('.file-tab').forEach(b => {
-        b.classList.remove('bg-gray-900', 'text-white', 'font-medium');
-        b.classList.add('text-gray-500');
-    });
-    btn.classList.add('bg-gray-900', 'text-white', 'font-medium');
-    btn.classList.remove('text-gray-500');
-    renderFiles();
-}
-
-function filterFiles() {
-    renderFiles();
-}
-
-function renderFiles() {
-    const tbody = document.getElementById('files-tbody');
-    const query = (document.getElementById('files-search')?.value || '').toLowerCase();
-    const typeMap = { csv: ['csv'], email: ['email'], pdf: ['pdf'] };
-    const allowed = typeMap[_activeFileTab] || null;
-
-    const filtered = _allFiles.filter(f => {
-        if (allowed && !allowed.includes(f.type)) return false;
-        if (query && !f.name.toLowerCase().includes(query) && !(f.task || '').toLowerCase().includes(query)) return false;
-        return true;
-    });
-
-    if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-12 text-center text-gray-400 text-sm">No files found.</td></tr>';
-        return;
-    }
-
-    const iconMap = {
-        csv:   { icon: 'fa-file-csv',       color: 'text-teal-500',  bg: 'bg-teal-50'  },
-        pdf:   { icon: 'fa-file-pdf',        color: 'text-red-500',   bg: 'bg-red-50'   },
-        email: { icon: 'fa-file-lines',      color: 'text-blue-500',  bg: 'bg-blue-50'  },
-    };
-
-    tbody.innerHTML = filtered.map(f => {
-        const ic = iconMap[f.type] || { icon: 'fa-file', color: 'text-gray-400', bg: 'bg-gray-100' };
-        return `<tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-            <td class="px-6 py-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-xl ${ic.bg} flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid ${ic.icon} ${ic.color}"></i>
-                    </div>
-                    <div>
-                        <p class="text-sm font-medium text-gray-800">${escHtml(f.name)}</p>
-                        <p class="text-xs text-gray-400 uppercase tracking-wide">${f.type.toUpperCase()}</p>
-                    </div>
-                </div>
-            </td>
-            <td class="px-6 py-4 text-sm text-gray-500">${escHtml(f.task || '—')}</td>
-            <td class="px-6 py-4 text-sm text-gray-400">${f.size}</td>
-            <td class="px-6 py-4 text-sm text-gray-400">${f.date}</td>
-            <td class="px-6 py-4">
-                <a href="/api/download/file?name=${encodeURIComponent(f.name)}" class="text-xs text-teal-600 hover:text-teal-800 font-medium flex items-center gap-1">
-                    <i class="fa-solid fa-download text-[10px]"></i> Download
-                </a>
-            </td>
-        </tr>`;
-    }).join('');
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
-const AGENTS = {
-    prospecting: { name: 'Prospecting Agent', desc: 'Tenant discovery & outreach', icon: 'fa-magnifying-glass-location', color: 'text-teal-400', bg: 'bg-[#1e3a35]' },
-    market:      { name: 'Market Research Agent', desc: 'CRE trends & vacancy data', icon: 'fa-chart-line', color: 'text-blue-400', bg: 'bg-[#1e2d45]' },
-    outreach:    { name: 'Outreach Agent', desc: 'Email campaigns & follow-ups', icon: 'fa-envelope-open-text', color: 'text-purple-400', bg: 'bg-[#2d1e3a]' },
-    lease:       { name: 'Lease Analysis Agent', desc: 'Review & summarize leases', icon: 'fa-file-contract', color: 'text-orange-400', bg: 'bg-[#3a2a1e]' },
-};
-
-function toggleConnector(key) {
-    document.querySelectorAll('.connector-card').forEach(c => {
-        const body = c.querySelector('.connector-body');
-        const chevron = c.querySelector('.connector-chevron');
-        if (c.dataset.key === key) {
-            const opening = body.classList.contains('hidden');
-            body.classList.toggle('hidden', !opening);
-            chevron.style.transform = opening ? 'rotate(180deg)' : '';
-        } else {
-            body.classList.add('hidden');
-            chevron.style.transform = '';
-        }
-    });
-}
-
-function selectModel(modelId, labelEl) {
-    const container = labelEl.closest('.space-y-2');
-    container.querySelectorAll('label').forEach(l => {
-        l.classList.remove('border-teal-300', 'bg-teal-50/50');
-        l.classList.add('border-gray-200');
-        const dot = l.querySelector('.rounded-full.border-2');
-        dot.classList.remove('border-teal-500');
-        dot.classList.add('border-gray-300');
-        dot.innerHTML = '';
-    });
-    labelEl.classList.add('border-teal-300', 'bg-teal-50/50');
-    labelEl.classList.remove('border-gray-200');
-    const dot = labelEl.querySelector('.rounded-full.border-2');
-    dot.classList.add('border-teal-500');
-    dot.classList.remove('border-gray-300');
-    dot.innerHTML = '<div class="w-2 h-2 rounded-full bg-teal-500"></div>';
-    // Save to config
-    fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ claude_model: modelId, model_provider: 'anthropic' }) });
-    toast('Model updated');
-}
-
-function toggleAgentDropdown() {
-    document.getElementById('agent-dropdown').classList.toggle('hidden');
-}
-
-function selectAgent(key) {
-    const a = AGENTS[key];
-    if (!a) return;
-    document.getElementById('agent-name').textContent = a.name;
-    document.getElementById('agent-desc').textContent = a.desc;
-    const icon = document.getElementById('agent-icon');
-    icon.className = `fa-solid ${a.icon} ${a.color} text-lg`;
-    document.getElementById('agent-dropdown').classList.add('hidden');
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', e => {
-    const dd = document.getElementById('agent-dropdown');
-    if (dd && !dd.classList.contains('hidden') && !e.target.closest('#agent-dropdown') && !e.target.closest('[onclick="toggleAgentDropdown()"]')) {
-        dd.classList.add('hidden');
-    }
-});
-
-function heroFill(text) {
-    const el = document.getElementById('hero-input');
-    if (el) { el.value = text; el.focus(); }
-}
-
-function heroSend() {
-    const el = document.getElementById('hero-input');
-    const msg = el ? el.value.trim() : '';
-    if (!msg) return;
-    el.value = '';
-    // Reuse the current task if it's still a fresh empty one (e.g. sidebar "New task" already created it)
-    const currentTask = tasks.find(t => t.id === currentTaskId);
-    if (!currentTask || currentTask.description !== 'New task' || currentTask.messages.length > 0) {
-        newTask();
-    }
-    showPage('session');
-    sendMessage(msg);
-}
-
-function toggleHistoryPanel() {
-    const panel = document.getElementById('history-panel');
-    if (panel) panel.classList.toggle('hidden');
-}
-
 function newTask() {
     const task = {
         id: Date.now(),
@@ -1059,10 +529,8 @@ function newTask() {
     const gabePrompt = document.getElementById('gabe-prompt');
     if (gabePrompt) gabePrompt.classList.remove('hidden');
     renderTasks();
-    // Show the hero page so the user can type their query first
-    showPage('tasks');
-    const heroInput = document.getElementById('hero-input');
-    if (heroInput) { heroInput.value = ''; heroInput.focus(); }
+    showPage('session');
+    document.getElementById('chat-input').focus();
 }
 
 function openTask(id) {
@@ -1081,7 +549,7 @@ function openTask(id) {
         else if (m.role === 'leads_table') {
             const container2 = document.getElementById('messages-container');
             const wrapper = document.createElement('div');
-            wrapper.innerHTML = renderLeadsTable(m.leads, 'apollo_search_people');
+            wrapper.innerHTML = renderLeadsTable(m.leads);
             container2.appendChild(wrapper.firstElementChild);
         }
     });
@@ -1092,54 +560,27 @@ function openTask(id) {
 }
 
 function renderTasks() {
-    const container = document.getElementById('tasks-cards');
-    if (!container) return;
+    const tbody = document.getElementById('tasks-tbody');
     if (tasks.length === 0) {
-        container.innerHTML = '<div class="bg-white border border-gray-200 rounded-xl px-6 py-8 text-center text-gray-400 text-sm">No tasks yet. Click "New task" to get started.</div>';
-        document.getElementById('download-bar').classList.add('hidden');
+        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400">No tasks yet. Click "New task" to get started.</td></tr>';
         return;
     }
-
-    container.innerHTML = [...tasks].reverse().map(t => {
-        // Status indicator
-        const statusMap = {
-            completed:   { icon: `<svg class="w-4 h-4 text-teal-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`, label: 'Completed', color: 'text-teal-500' },
-            in_progress: { icon: `<svg class="w-4 h-4 text-teal-500 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>`, label: 'In progress', color: 'text-teal-500' },
-            failed:      { icon: `<svg class="w-4 h-4 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>`, label: 'Failed', color: 'text-red-400' },
-        };
-        const s = statusMap[t.status] || statusMap.in_progress;
-
-        // Subtitle from outputs
-        const subtitle = t.outputs.length ? t.outputs.join(' · ') : (t.status === 'in_progress' ? 'Searching…' : '');
-
-        // Output type icons (right side)
-        const outputIconMap = [
-            { test: o => /prospect|lead/i.test(o),   icon: `<i class="fa-solid fa-chart-bar text-blue-400 text-sm"></i>` },
-            { test: o => /hubspot|contact/i.test(o), icon: `<i class="fa-solid fa-user-group text-orange-400 text-sm"></i>` },
-            { test: o => /email|draft/i.test(o),     icon: `<i class="fa-regular fa-envelope text-teal-500 text-sm"></i>` },
-            { test: o => /csv|pdf|report|export/i.test(o), icon: `<i class="fa-regular fa-file text-purple-400 text-sm"></i>` },
-        ];
-        const rightIcons = [...new Set(
-            t.outputs.flatMap(o => outputIconMap.filter(m => m.test(o)).map(m => m.icon))
-        )].join('');
-
-        return `<div class="bg-white border border-gray-200 rounded-xl px-6 py-4 flex items-center gap-5 cursor-pointer hover:shadow-sm transition-shadow" onclick="openTask(${t.id})">
-            <div class="flex items-center gap-2 w-32 flex-shrink-0">
-                ${s.icon}
-                <span class="text-sm font-medium ${s.color}">${s.label}</span>
-            </div>
-            <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold text-gray-900 truncate">${escHtml(t.description)}</p>
-                ${subtitle ? `<p class="text-xs text-gray-400 mt-0.5 truncate">${escHtml(subtitle)}</p>` : ''}
-            </div>
-            <div class="flex items-center gap-3 flex-shrink-0">
-                ${rightIcons ? `<div class="flex items-center gap-2">${rightIcons}</div>` : ''}
-                <span class="flex items-center gap-1 text-xs text-gray-400 whitespace-nowrap">
-                    <i class="fa-regular fa-clock"></i> ${timeAgo(t.time)}
-                </span>
-                <i class="fa-solid fa-chevron-right text-gray-300 text-xs"></i>
-            </div>
-        </div>`;
+    tbody.innerHTML = tasks.map(t => {
+        const statusBadge = {
+            completed:   '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span> Completed</span>',
+            in_progress: '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><span class="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span> In Progress</span>',
+            failed:      '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span> Failed</span>',
+        }[t.status] || '';
+        const outputs = t.outputs.map(o =>
+            `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 mr-1">${o}</span>`
+        ).join('');
+        return `<tr class="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onclick="openTask(${t.id})">
+            <td class="px-6 py-4 font-medium text-gray-900">${escHtml(t.description)}</td>
+            <td class="px-6 py-4">${statusBadge}</td>
+            <td class="px-6 py-4">${outputs || '<span class="text-gray-300">—</span>'}</td>
+            <td class="px-6 py-4 text-gray-400 text-xs">${timeAgo(t.time)}</td>
+            <td class="px-6 py-4"><button class="text-xs text-teal-600 hover:underline">Open</button></td>
+        </tr>`;
     }).join('');
 
     // Show download bar if we have CSVs
@@ -1186,387 +627,36 @@ function appendAgentMessage(text) {
     return div.querySelector('.agent-content');
 }
 
-// ── Progress card (tool steps during agent run) ────────────────────────────
-let progressCardEl   = null;
-let progressStepEls  = {};          // name → DOM row el
-let _pcSteps         = [];          // [{name, startTime, status}]
-
-// Returns {label, source, sColor, sBg} for a tool call
-function getToolMeta(name, inp) {
-    inp = inp || {};
-    const G  = { source:'Google',   sColor:'#1a73e8', sBg:'#e8f0fe' };
-    const SB = { source:'Sunbiz',   sColor:'#059669', sBg:'#d1fae5' };
-    const AP = { source:'Apollo',   sColor:'#7c3aed', sBg:'#ede9fe' };
-    const HU = { source:'Hunter',   sColor:'#7c3aed', sBg:'#ede9fe' };
-    const HS = { source:'HubSpot',  sColor:'#ff7a59', sBg:'#fff1ee' };
-    const GM = { source:'Gmail',    sColor:'#ea4335', sBg:'#fce8e6' };
-    const CS = { source:'CSV',      sColor:'#374151', sBg:'#f3f4f6' };
-    const RE = { source:'Research', sColor:'#0891b2', sBg:'#cffafe' };
-
-    function domainBadge(url) {
-        const d = (url||'').replace(/https?:\/\//,'').split('/')[0].replace(/^www\./,'');
-        return { source: d||'Web', sColor:'#374151', sBg:'#f3f4f6' };
-    }
-
-    switch (name) {
-        case 'web_search':
-            return { ...G,  label: `Searched Google for '${(inp.query||'').substring(0,55)}'` };
-        case 'search_businesses_maps':
-            return { ...G,  label: `Searching Google Maps — ${inp.keyword||''} in ${inp.location||''}`,
-                            source: 'Maps' };
-        case 'sunbiz_lookup':
-            return { ...SB, label: `Cross-checking Sunbiz business registry` };
-        case 'browse_url': {
-            const db = domainBadge(inp.url);
-            return { ...db,  label: `Navigated to ${db.source}` };
-        }
-        case 'scrape_website_contact': {
-            const db = domainBadge(inp.url);
-            return { ...db,  label: `Reading website — contact scan on ${db.source}` };
-        }
-        case 'get_google_reviews':
-            return { ...G,  label: `Opened Google Business profile for ${inp.business_name||''}` };
-        case 'enrich_leads_batch':
-            return { ...HU, label: `Enriching ${inp.max_leads||'all'} leads with contact data` };
-        case 'apollo_search_people':
-            return { ...AP, label: `Searching Apollo — ${inp.title||'contacts'} in ${inp.city||inp.location||''}` };
-        case 'research_company':
-            return { ...RE, label: `Deep research on ${inp.company_name||'company'}` };
-        case 'get_collected_leads':
-            return { source:'Leads', sColor:'#059669', sBg:'#d1fae5',
-                     label: `Retrieving collected leads` };
-        case 'save_leads_csv':
-            return { ...CS, label: `Saving leads to CSV file` };
-        case 'save_outreach_csv':
-            return { ...CS, label: `Saving outreach emails to CSV` };
-        case 'send_gmail_email':
-            return { ...GM, label: `Sending email to ${inp.to||'recipient'}` };
-        case 'create_gmail_drafts':
-            return { ...GM, label: `Creating Gmail drafts` };
-        case 'hubspot_create_contact':
-            return { ...HS, label: `Creating HubSpot contact for ${inp.company||''}` };
-        default:
-            return { source:'Agent', sColor:'#6b7280', sBg:'#f3f4f6',
-                     label: name.replace(/_/g,' ') };
-    }
-}
-
-// Returns a short summary line from the tool result
-function getResultSubtitle(name, result) {
-    if (!result) return '';
-    try {
-        switch(name) {
-            case 'web_search':
-                if (result.results && result.results.length)
-                    return `Found ${result.results.length} results — top match ${(result.results[0].url||'').replace(/https?:\/\//,'').split('/')[0]}`;
-                break;
-            case 'get_google_reviews':
-                if (result.rating) return `${result.rating} stars · ${result.review_count||0} reviews`;
-                break;
-            case 'sunbiz_lookup':
-                if (result.entity_name)
-                    return `${result.entity_name} · ${result.status||'Unknown status'}`;
-                break;
-            case 'scrape_website_contact': {
-                const parts = [];
-                if (result.owner_email||result.general_email) parts.push(`Email found`);
-                if (result.instagram_url) parts.push(`Instagram found`);
-                if (result.phones && result.phones.length) parts.push(`Phone: ${result.phones[0]}`);
-                return parts.join(' · ') || 'Scan complete';
-            }
-            case 'browse_url':
-                if (result.title) return result.title.substring(0,80);
-                if (result.text)  return result.text.substring(0,80) + '…';
-                break;
-            case 'enrich_leads_batch':
-                if (result.enriched != null) return `Enriched ${result.enriched} of ${result.total||'?'} leads`;
-                break;
-            case 'search_businesses_maps':
-                if (Array.isArray(result)) return `Found ${result.length} businesses`;
-                break;
-            case 'apollo_search_people':
-                if (result.leads) return `Found ${result.leads.length} contacts`;
-                break;
-            case 'get_collected_leads':
-                if (Array.isArray(result)) return `${result.length} leads in pipeline`;
-                break;
-        }
-    } catch(e) {}
-    return '';
-}
-
-function _pcSourceBadge(source, sColor, sBg) {
-    return `<span class="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-                  style="color:${sColor};background:${sBg}">${escHtml(source)}</span>`;
-}
-
-function _pcRenderSteps() {
-    if (!progressCardEl) return;
-    const stepsEl = progressCardEl.querySelector('#pc-steps');
-    if (!stepsEl) return;
-    stepsEl.innerHTML = '';
-    _pcSteps.forEach(s => {
-        const row = document.createElement('div');
-        row.id = 'pc-row-' + s.id;
-        row.className = 'flex items-start gap-3 py-3';
-
-        let iconHtml;
-        if (s.status === 'done') {
-            iconHtml = `<div class="w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <svg class="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                </svg></div>`;
-        } else if (s.status === 'active') {
-            iconHtml = `<div class="w-5 h-5 rounded-full border-2 border-teal-400 border-t-transparent animate-spin flex-shrink-0 mt-0.5"></div>`;
-        } else {
-            iconHtml = `<div class="w-5 h-5 rounded-full border-2 border-gray-200 flex-shrink-0 mt-0.5"></div>`;
-        }
-
-        const labelColor = s.status === 'pending' ? 'text-gray-400' : 'text-gray-800';
-        const subtitleHtml = s.subtitle
-            ? `<p class="text-xs text-gray-400 mt-0.5">${escHtml(s.subtitle)}</p>` : '';
-        const elapsedHtml = s.elapsed
-            ? `<span class="text-xs text-gray-400 flex-shrink-0">${s.elapsed}s</span>` : '';
-
-        row.innerHTML = `
-            ${iconHtml}
-            <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium ${labelColor} leading-snug">${escHtml(s.label)}</p>
-                ${subtitleHtml}
-            </div>
-            ${_pcSourceBadge(s.source, s.sColor, s.sBg)}
-            ${elapsedHtml}`;
-        stepsEl.appendChild(row);
-    });
-}
-
-function _pcUpdateHeader() {
-    if (!progressCardEl) return;
-    const done  = _pcSteps.filter(s => s.status === 'done').length;
-    const total = _pcSteps.length;
-    const pct   = total ? Math.round((done / total) * 100) : 0;
-
-    const counter = progressCardEl.querySelector('#pc-counter');
-    if (counter) counter.textContent = `${done} of ${total} step${total!==1?'s':''} done`;
-
-    const bar = progressCardEl.querySelector('#pc-bar');
-    if (bar) bar.style.width = pct + '%';
-
-    // Current source = the active step's source
-    const active = _pcSteps.find(s => s.status === 'active');
-    const srcEl  = progressCardEl.querySelector('#pc-current-source');
-    if (srcEl && active) {
-        srcEl.textContent  = active.source;
-        srcEl.style.color  = active.sColor;
-        srcEl.style.background = active.sBg;
-    } else if (srcEl) {
-        srcEl.textContent = '';
-    }
-}
-
-function ensureProgressCard() {
-    if (progressCardEl && document.getElementById('pc-steps')) return;
-    _pcSteps = [];
-    progressStepEls = {};
+function appendToolChip(name, done) {
     const container = document.getElementById('messages-container');
-    const card = document.createElement('div');
-    card.id = 'progress-card';
-    card.className = 'my-3 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden';
-    card.innerHTML = `
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
-            <div class="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0">
-                <svg class="w-4 h-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
-                </svg>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-3">
-                    <span class="font-semibold text-gray-900 text-sm">Browsing the web</span>
-                    <span id="pc-counter" class="text-xs text-gray-400">0 steps done</span>
-                </div>
-                <div class="mt-1.5 h-1.5 bg-gray-100 rounded-full w-48">
-                    <div id="pc-bar" class="h-1.5 bg-teal-500 rounded-full transition-all duration-500" style="width:0%"></div>
-                </div>
-            </div>
-            <span id="pc-current-source" class="text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all"></span>
-        </div>
-        <div id="pc-steps" class="divide-y divide-gray-50 px-5"></div>`;
-    container.appendChild(card);
-    progressCardEl = card;
-    scrollToBottom();
-}
-
-function addProgressStep(name, inputs) {
-    ensureProgressCard();
-    const meta = getToolMeta(name, inputs || {});
-    const uid  = name + '_' + Date.now();
-    const step = { id: uid, name, label: meta.label, source: meta.source,
-                   sColor: meta.sColor, sBg: meta.sBg,
-                   status: 'active', startTime: Date.now(), elapsed: 0, subtitle: '' };
-    // Mark previous active as still-running (keep spinner) — only one spinner at a time
-    _pcSteps.forEach(s => { if (s.status === 'active') s.status = 'done'; });
-    _pcSteps.push(step);
-    progressStepEls[name] = step;
-    _pcRenderSteps();
-    _pcUpdateHeader();
-    scrollToBottom();
-}
-
-function completeProgressStep(name, result) {
-    const step = progressStepEls[name];
-    if (!step) return;
-    step.status  = 'done';
-    step.elapsed = Math.round((Date.now() - step.startTime) / 1000);
-    step.subtitle = getResultSubtitle(name, result) || step.subtitle;
-    _pcRenderSteps();
-    _pcUpdateHeader();
-}
-
-function finalizeProgressCard() {
-    if (!progressCardEl) return;
-    _pcSteps.forEach(s => { s.status = 'done'; });
-    const done = _pcSteps.length;
-    const counter = progressCardEl.querySelector('#pc-counter');
-    if (counter) counter.textContent = `${done} of ${done} step${done!==1?'s':''} done`;
-    const bar = progressCardEl.querySelector('#pc-bar');
-    if (bar) bar.style.width = '100%';
-    const srcEl = progressCardEl.querySelector('#pc-current-source');
-    if (srcEl) { srcEl.textContent = ''; srcEl.style.background = ''; }
-    _pcRenderSteps();
-    progressCardEl  = null;
-    progressStepEls = {};
-    _pcSteps        = [];
-}
-
-// ── HubSpot upload card ────────────────────────────────────────────────────
-let _hsCard = null;
-let _hsContacts = [];   // [{company, email}]
-let _hsTimer = null;
-let _hsActiveIdx = -1;
-
-function createHubSpotCard(leads) {
-    if (_hsCard) return;               // already open
-    _hsContacts = leads || [];
-    const n = _hsContacts.length;
-
-    const container = document.getElementById('messages-container');
-    const wrapper = document.createElement('div');
-    wrapper.className = 'flex items-start space-x-4';
-    wrapper.innerHTML = `
-        <div class="bg-teal-500 text-white rounded-lg h-8 w-8 flex items-center justify-center flex-shrink-0 mt-1 text-xs font-bold">M</div>
-        <div class="flex-1 min-w-0">
-            <p class="text-xs font-semibold text-gray-400 mb-2">MMG Agent</p>
-            <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                <!-- Card header -->
-                <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
-                    <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-                        <span class="text-orange-500 font-bold text-sm leading-none">H</span>
-                    </div>
-                    <span class="text-sm font-semibold text-gray-800">Syncing ${n} contact${n !== 1 ? 's' : ''} to HubSpot CRM via connected API…</span>
-                </div>
-                <!-- Contact rows -->
-                <div class="hs-rows divide-y divide-gray-50">
-                    ${_hsContacts.map((c, i) => `
-                    <div class="hs-row flex items-center justify-between px-5 py-3.5" data-idx="${i}">
-                        <div class="flex items-center gap-2 text-sm">
-                            <span class="font-medium text-gray-800">${escHtml(c.company || c.email || 'Contact')}</span>
-                            <svg class="w-3.5 h-3.5 text-gray-300" fill="none" viewBox="0 0 20 20"><path d="M4 10h12M12 6l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            <span class="text-gray-400">HubSpot Contact</span>
-                        </div>
-                        <div class="hs-status flex-shrink-0">
-                            ${pendingIcon()}
-                        </div>
-                    </div>`).join('')}
-                </div>
-                <!-- Footer -->
-                <div class="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/60">
-                    <span class="text-xs text-gray-400">${n} contact${n !== 1 ? 's' : ''} · Syncing to HubSpot CRM</span>
-                    <span class="hs-footer-status text-xs font-semibold text-orange-500">In Progress</span>
-                </div>
-            </div>
-        </div>`;
-    container.appendChild(wrapper);
-    _hsCard = wrapper;
-    scrollToBottom();
-
-    // Animate: advance one contact every 400ms
-    _hsActiveIdx = -1;
-    _hsTimer = setInterval(_advanceHubSpot, 420);
-}
-
-function pendingIcon() {
-    return `<svg class="w-5 h-5 text-gray-200" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/>
-    </svg>`;
-}
-function activeIcon() {
-    return `<svg class="w-5 h-5 text-orange-400 animate-spin" viewBox="0 0 24 24" fill="none">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/>
-        <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-    </svg>`;
-}
-function doneHsIcon() {
-    return `<svg class="w-5 h-5 text-teal-500" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M6.5 10l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>`;
-}
-
-function _advanceHubSpot() {
-    if (!_hsCard) { clearInterval(_hsTimer); return; }
-    const rows = _hsCard.querySelectorAll('.hs-row');
-    // Mark previous as done
-    if (_hsActiveIdx >= 0 && rows[_hsActiveIdx]) {
-        rows[_hsActiveIdx].querySelector('.hs-status').innerHTML = doneHsIcon();
-    }
-    _hsActiveIdx++;
-    if (_hsActiveIdx >= rows.length) {
-        clearInterval(_hsTimer);
-        return;
-    }
-    rows[_hsActiveIdx].querySelector('.hs-status').innerHTML = activeIcon();
-    scrollToBottom();
-}
-
-function finalizeHubSpotCard(result) {
-    clearInterval(_hsTimer);
-    if (!_hsCard) return;
-    // Mark all remaining rows as done
-    _hsCard.querySelectorAll('.hs-row').forEach(row => {
-        row.querySelector('.hs-status').innerHTML = doneHsIcon();
-    });
-    // Update footer
-    const footer = _hsCard.querySelector('.hs-footer-status');
-    if (footer) {
-        const uploaded = result?.uploaded ?? _hsContacts.length;
-        footer.className = 'hs-footer-status text-xs font-semibold text-teal-500';
-        footer.textContent = `${uploaded} uploaded`;
-    }
-    _hsCard = null;
-    _hsContacts = [];
-    _hsActiveIdx = -1;
-}
-
-function appendToolChipStatic(name, done) {
-    const container = document.getElementById('messages-container');
-    const { title, sub } = getToolMeta(name);
-    const checkSvg = `<div class="w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center">
-        <svg class="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-        </svg></div>`;
-    const spinSvg = `<div class="w-5 h-5 rounded-full border-2 border-teal-400 border-t-transparent animate-spin"></div>`;
+    const icons = {
+        apollo_search_people:   '🔍',
+        hubspot_create_contact: '📥',
+        web_search:             '🌐',
+        save_outreach_csv:      '💾',
+        save_leads_csv:         '💾'
+    };
+    const icon = icons[name] || '⚙️';
+    const label = name.replace(/_/g, ' ');
     const div = document.createElement('div');
     div.className = 'flex items-start space-x-4';
     div.innerHTML = `
         <div class="w-8 flex-shrink-0"></div>
-        <div class="bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-3 flex items-center gap-3">
-            <div class="flex-shrink-0">${done ? checkSvg : spinSvg}</div>
-            <div>
-                <p class="text-sm font-semibold text-gray-800">${escHtml(title)}</p>
-                <p class="text-xs text-gray-400">${escHtml(sub)}</p>
-            </div>
-        </div>`;
+        <span class="${done
+            ? 'bg-green-50 text-green-700 border-green-200'
+            : 'bg-blue-50 text-blue-700 border-blue-200 tool-running'
+        } border rounded-full px-3 py-1 text-xs font-medium inline-flex items-center gap-1.5">
+            <span>${icon}</span>
+            <span>${done ? '✓' : '…'}</span>
+            <span>${label}</span>
+        </span>`;
     container.appendChild(div);
+    scrollToBottom();
+    return div;
+}
+
+function appendToolChipStatic(name, done) {
+    appendToolChip(name, done);
 }
 
 // ── Chat send ──────────────────────────────────────────────────────────────
@@ -1597,10 +687,7 @@ async function sendMessage(prefill) {
 
     let agentContentEl = null;
     let agentText = '';
-    progressCardEl = null;
-    progressStepEls = {};
-    _hsCard = null;
-    clearInterval(_hsTimer);
+    let toolChipEl = null;
     let currentToolName = null;
 
     try {
@@ -1636,48 +723,33 @@ async function sendMessage(prefill) {
                 let evt;
                 try { evt = JSON.parse(line.slice(6)); } catch { continue; }
 
-                try {
                 if (evt.type === 'text') {
                     if (!agentContentEl) {
                         agentContentEl = appendAgentMessage('');
+                        agentContentEl.classList.add('typing-cursor');
                     }
                     agentText += evt.content;
-                    agentContentEl.innerHTML = renderMarkdown(agentText) + '<span class="typing-blink"></span>';
+                    agentContentEl.innerHTML = renderMarkdown(agentText);
                     scrollToBottom();
 
                 } else if (evt.type === 'tool_start') {
                     currentToolName = evt.name;
-                    // Strip cursor span from any prior text bubble
-                    if (agentContentEl) agentContentEl.innerHTML = renderMarkdown(agentText);
-                    if (evt.name === 'upload_leads_to_hubspot' && evt.leads?.length) {
-                        // Specialized HubSpot card
-                        finalizeProgressCard();   // close any open progress card first
-                        createHubSpotCard(evt.leads);
-                    } else {
-                        addProgressStep(evt.name, evt.input || {});
-                    }
+                    toolChipEl = appendToolChip(evt.name, false);
                     if (task) task.messages.push({role: 'tool_chip', name: evt.name, done: false});
+                    // Show inline status hint for long-running tools
+                    if (evt.name === 'search_businesses_maps') {
+                        if (!agentContentEl) agentContentEl = appendAgentMessage('');
+                        agentContentEl.innerHTML = '<span class="text-gray-400 italic">🗺️ Searching Google Maps…</span>';
+                    } else if (evt.name === 'enrich_leads_batch') {
+                        if (!agentContentEl) agentContentEl = appendAgentMessage('');
+                        agentContentEl.innerHTML = '<span class="text-gray-400 italic">⚡ Enriching leads with Sunbiz, website, and contact data…</span>';
+                    }
 
                 } else if (evt.type === 'tool_end') {
-                    if (evt.name === 'upload_leads_to_hubspot') {
-                        finalizeHubSpotCard(evt.result);
-                    } else if (evt.name === 'research_company' && evt.result && evt.result._report_type === 'company_research') {
-                        finalizeProgressCard();
-                        const reportDiv = document.createElement('div');
-                        reportDiv.innerHTML = renderCompanyReport(evt.result);
-                        const firstEl = reportDiv.firstElementChild;
-                        if (firstEl) {
-                            document.getElementById('messages-container').appendChild(firstEl);
-                            scrollToBottom();
-                        }
-                    } else if (evt.name === 'generate_prospecting_report' && evt.result?._report_type === 'prospecting_report') {
-                        finalizeProgressCard();
-                        const rpDiv = document.createElement('div');
-                        rpDiv.innerHTML = renderPDFReportCard(evt.result);
-                        const el = rpDiv.firstElementChild;
-                        if (el) { document.getElementById('messages-container').appendChild(el); scrollToBottom(); }
-                    } else {
-                        completeProgressStep(evt.name, evt.result);
+                    if (toolChipEl) {
+                        const span = toolChipEl.querySelector('span');
+                        span.className = 'bg-green-50 text-green-700 border-green-200 border rounded-full px-3 py-1 text-xs font-medium inline-flex items-center gap-1.5';
+                        span.innerHTML = `<span>${getToolIcon(evt.name)}</span><span>✓</span><span>${evt.name.replace(/_/g,' ')}</span>`;
                     }
                     // Update the last tool_chip message to done
                     if (task) {
@@ -1690,7 +762,7 @@ async function sendMessage(prefill) {
                         .includes(evt.name) && evt.result?.leads?.length ? evt.result.leads : null;
                     if (leadsResult) {
                         const tableDiv = document.createElement('div');
-                        tableDiv.innerHTML = renderLeadsTable(leadsResult, evt.name);
+                        tableDiv.innerHTML = renderLeadsTable(leadsResult);
                         document.getElementById('messages-container').appendChild(tableDiv.firstElementChild);
                         scrollToBottom();
                         hasLeads = true;
@@ -1728,9 +800,10 @@ async function sendMessage(prefill) {
                             renderTasks();
                         }
                     }
+                    toolChipEl = null;
+
                 } else if (evt.type === 'done') {
-                    finalizeProgressCard();
-                    if (agentContentEl) agentContentEl.innerHTML = renderMarkdown(agentText);
+                    if (agentContentEl) agentContentEl.classList.remove('typing-cursor');
                     chatHistory.push({role: 'user', content: message});
                     chatHistory.push({role: 'assistant', content: agentText});
                     if (task) {
@@ -1741,19 +814,14 @@ async function sendMessage(prefill) {
 
                 } else if (evt.type === 'error') {
                     if (!agentContentEl) agentContentEl = appendAgentMessage('');
-                    agentContentEl.innerHTML = renderMarkdown(agentText);
+                    agentContentEl.classList.remove('typing-cursor');
                     agentContentEl.innerHTML += `<p class="text-red-500 mt-2 text-xs">Error: ${escHtml(evt.content)}</p>`;
                     if (task) task.status = 'failed';
                     renderTasks();
                 }
-                } catch(evtErr) {
-                    // Log per-event errors to console but don't break the stream
-                    console.error('SSE event handler error:', evtErr, evt);
-                }
             }
         }
     } catch (e) {
-        document.querySelectorAll('.typing-blink').forEach(el => el.remove());
         appendAgentMessage(`Connection error: ${e.message}`);
         if (task) task.status = 'failed';
         renderTasks();
@@ -1776,283 +844,8 @@ function getToolIcon(name) {
     return icons[name] || '⚙️';
 }
 
-// ── PDF Prospecting Report Card ────────────────────────────────────────────
-function renderPDFReportCard(data) {
-    const filename   = escHtml(data.filename   || 'MMG_Report.html');
-    const pages      = data.pages      || 1;
-    const sizeMb     = data.size_mb    || '—';
-    const leadsCount = data.leads_count || 0;
-    const avgScore   = data.avg_score  || 0;
-    const hotLeads   = data.hot_leads  || 0;
-    const title      = escHtml(data.title      || 'Tenant Prospecting Report');
-    const subtitle   = escHtml(data.subtitle   || '');
-    const summary    = escHtml(data.summary    || '');
-    const leads      = data.leads      || [];
-    const dlUrl      = '/api/download/file?name=' + encodeURIComponent(data.filename || '');
-
-    // Build lead rows HTML
-    const leadRowsHtml = leads.slice(0, 8).map((l, i) => {
-        const score   = l.expansion_probability || l.score || 0;
-        const hot     = score >= 80;
-        const scorePill = `<span class="inline-block text-xs font-bold px-2 py-0.5 rounded-full ${hot ? 'bg-teal-50 text-teal-600' : 'bg-gray-100 text-gray-500'}">${score}%</span>`;
-        const phone   = escHtml(l.phone || l.general_phone || '—');
-        const email   = escHtml(l.owner_email || l.general_email || '—');
-        const name    = escHtml(l.trade_name || l.entity_name || l.company_name || `Lead ${i+1}`);
-        const city    = escHtml(l.city || '');
-        return `<tr class="border-t border-gray-100 hover:bg-gray-50">
-            <td class="py-2.5 px-4">
-                <div class="flex items-center gap-2">
-                    <div class="w-7 h-7 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">${escHtml(name.charAt(0))}</div>
-                    <div>
-                        <p class="text-sm font-medium text-gray-900">${name}</p>
-                        <p class="text-xs text-gray-400">${city}</p>
-                    </div>
-                </div>
-            </td>
-            <td class="py-2.5 px-4 text-xs text-gray-500">${phone}</td>
-            <td class="py-2.5 px-4 text-xs text-gray-500">${email}</td>
-            <td class="py-2.5 px-4">${scorePill}</td>
-        </tr>`;
-    }).join('');
-
-    return `
-<div class="my-4 rounded-2xl border border-gray-200 overflow-hidden shadow-sm bg-white">
-    <!-- Toolbar -->
-    <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-200 bg-white">
-        <svg class="w-5 h-5 text-red-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM8.5 17h-1v-5h1.9c1.1 0 1.6.6 1.6 1.5s-.6 1.5-1.6 1.5H8.5V17zm0-2.8h.8c.5 0 .7-.2.7-.7s-.2-.7-.7-.7H8.5v1.4zm4.5 2.8h-1.5v-5H13c1.4 0 2.2.8 2.2 2.5S14.4 17 13 17zm-.5-4.2v3.4h.4c.8 0 1.2-.5 1.2-1.7s-.4-1.7-1.2-1.7h-.4zm5.5 1.2v1h-1.5V17h-1v-5h2.6v.8H17v1.2h1.5z"/>
-        </svg>
-        <span class="font-semibold text-gray-900 text-sm">${filename}</span>
-        <span class="text-gray-400 text-xs">· ${pages} page${pages!==1?'s':''} · ${sizeMb} MB</span>
-        <div class="ml-auto flex items-center gap-2">
-            <div class="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 rounded-lg px-2 py-1">
-                <button class="hover:text-gray-800" onclick="this.closest('.my-4').querySelector('.pc-zoom-level').textContent = (parseInt(this.closest('.my-4').querySelector('.pc-zoom-level').textContent)-10)+'%'">−</button>
-                <span class="pc-zoom-level w-10 text-center">100%</span>
-                <button class="hover:text-gray-800" onclick="this.closest('.my-4').querySelector('.pc-zoom-level').textContent = (parseInt(this.closest('.my-4').querySelector('.pc-zoom-level').textContent)+10)+'%'">+</button>
-            </div>
-            <div class="w-px h-4 bg-gray-200"></div>
-            <button class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500" title="Full screen" onclick="document.querySelector('.pc-preview-inner')?.requestFullscreen?.()">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
-            </button>
-            <button class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-gray-50 flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                Share
-            </button>
-            <a href="${dlUrl}" download class="bg-gray-900 text-white rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-gray-700 flex items-center gap-1.5 no-underline">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Export PDF
-            </a>
-        </div>
-    </div>
-
-    <!-- Preview area -->
-    <div class="bg-gray-100 px-6 py-6 pc-preview-inner">
-        <!-- Dark hero card -->
-        <div class="max-w-2xl mx-auto rounded-xl overflow-hidden" style="background:#0f1b2d">
-            <div class="px-8 pt-8 pb-6">
-                <p class="text-xs font-bold tracking-widest" style="color:#2dd4bf">MMG EQUITY PARTNERS · CONFIDENTIAL</p>
-                <h1 class="text-2xl font-bold text-white mt-2">${title}</h1>
-                ${subtitle ? `<p class="mt-1 text-sm" style="color:#94a3b8">${subtitle}</p>` : ''}
-                <div class="flex items-center gap-0 mt-6">
-                    <div class="pr-8">
-                        <div class="text-3xl font-bold text-white">${leadsCount}</div>
-                        <div class="text-xs mt-1" style="color:#64748b">Prospects</div>
-                    </div>
-                    <div class="w-px h-10" style="background:#1e2d40"></div>
-                    <div class="px-8">
-                        <div class="text-3xl font-bold text-white">${avgScore}%</div>
-                        <div class="text-xs mt-1" style="color:#64748b">Avg. Match</div>
-                    </div>
-                    <div class="w-px h-10" style="background:#1e2d40"></div>
-                    <div class="pl-8">
-                        <div class="text-3xl font-bold" style="color:#2dd4bf">${hotLeads}</div>
-                        <div class="text-xs mt-1" style="color:#64748b">Hot leads</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Executive Summary -->
-        ${summary ? `
-        <div class="max-w-2xl mx-auto mt-3 bg-white rounded-xl px-8 py-6">
-            <p class="text-xs font-bold text-gray-400 tracking-widest uppercase">Executive Summary</p>
-            <p class="mt-3 text-sm text-gray-700 leading-relaxed">${summary}</p>
-        </div>` : ''}
-
-        <!-- Leads table -->
-        ${leadRowsHtml ? `
-        <div class="max-w-2xl mx-auto mt-3 bg-white rounded-xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-100">
-                <p class="text-xs font-bold text-gray-400 tracking-widest uppercase">Prospect Overview</p>
-            </div>
-            <table class="w-full">
-                <thead>
-                    <tr class="text-left">
-                        <th class="py-2 px-4 text-xs font-semibold text-gray-400">BUSINESS</th>
-                        <th class="py-2 px-4 text-xs font-semibold text-gray-400">PHONE</th>
-                        <th class="py-2 px-4 text-xs font-semibold text-gray-400">EMAIL</th>
-                        <th class="py-2 px-4 text-xs font-semibold text-gray-400">SCORE</th>
-                    </tr>
-                </thead>
-                <tbody>${leadRowsHtml}</tbody>
-            </table>
-        </div>` : ''}
-    </div>
-
-    <!-- Bottom actions -->
-    <div class="flex items-center justify-center gap-3 px-4 py-3 border-t border-gray-100 bg-white">
-        <button onclick="alert('Saved to Files')" class="border border-gray-200 rounded-full px-4 py-1.5 text-sm font-medium hover:bg-gray-50">Save to Files</button>
-        <button onclick="navigator.clipboard?.writeText(window.location.href)" class="border border-gray-200 rounded-full px-4 py-1.5 text-sm font-medium hover:bg-gray-50">Share with team</button>
-        <a href="${dlUrl}" target="_blank" class="border border-gray-200 rounded-full px-4 py-1.5 text-sm font-medium hover:bg-gray-50 no-underline text-gray-700">Open full screen</a>
-    </div>
-</div>`;
-}
-
-// ── Company Research Report ────────────────────────────────────────────────
-function renderCompanyReport(data) {
-    const sb   = data.sunbiz        || {};
-    const cd   = data.contact_data  || {};
-    const name = data.company_name  || sb.trade_name || sb.entity_name || '';
-    const date = data.date || '';
-    const tradeName    = sb.trade_name   || data.company_name || '';
-    const entityName   = sb.entity_name  || '';
-    const status       = (sb.status || sb.sunbiz_status || '').trim();
-    const estDate      = sb.formation_date || '';
-    const address      = sb.address || '';
-    const neighborhood = data.city || (address.split(',')[1] || '').trim();
-    let yearsActive = '';
-    try {
-        const y = sb.years_in_business ? parseInt(sb.years_in_business) : 0;
-        if (y) yearsActive = `${y} year${y !== 1 ? 's' : ''}`;
-        else if (estDate) {
-            const d = new Date(estDate.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2'));
-            const yrs = Math.floor((Date.now() - d) / (1000*60*60*24*365));
-            if (!isNaN(yrs) && yrs > 0) yearsActive = `${yrs} year${yrs !== 1 ? 's' : ''}`;
-        }
-    } catch(e) {}
-    const gRating  = data.google_rating  ? parseFloat(data.google_rating).toFixed(1) : '';
-    const gReviews = data.google_reviews ? parseInt(String(data.google_reviews).replace(/,/g,'')).toLocaleString() : '';
-    const website  = data.website || cd.website || '';
-    const igUrl    = cd.instagram_url || sb.instagram_url || '';
-    const igHandle = igUrl ? igUrl.replace(/^https?:\/\/(www\.)?instagram\.com\//,'').replace(/\/$/,'') : '';
-    const ownerName  = sb.owner_name    || '';
-    const ownerEmail = sb.owner_email   || cd.owner_email    || '';
-    const ownerPhone = sb.owner_phone   || cd.owner_phone    || '';
-    const bizPhone   = sb.business_phone || cd.business_phone || '';
-    const genEmail   = cd.general_email  || sb.general_email  || '';
-    const prob       = data.expansion_probability || 0;
-    const signals    = data.expansion_signals     || [];
-    const probColor  = prob >= 75 ? '#0d9488' : prob >= 55 ? '#d97706' : '#6b7280';
-
-    // Executive summary
-    let execSummary = escHtml(tradeName || name) + ' is';
-    if (sb.industry) execSummary += ` a ${escHtml(sb.industry)} business`;
-    if (neighborhood) execSummary += ` in ${escHtml(neighborhood)}`;
-    if (estDate) { try { execSummary += ` since ${new Date(estDate.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2')).getFullYear()}`; } catch(e){} }
-    execSummary += '.';
-    if (gRating) execSummary += ` With a ${gRating} Google rating across ${gReviews} reviews, they represent a ${prob >= 70 ? 'high-quality' : 'potential'} expansion tenant for Class A retail.`;
-    if (ownerName) execSummary += ` Owner ${escHtml(ownerName)} ${ownerEmail || ownerPhone ? 'is reachable for direct outreach.' : 'identified.'}`;
-    if (status.toLowerCase() === 'active' && entityName) execSummary += ` Sunbiz entity status is Active — ${escHtml(entityName)}.`;
-
-    // Recommendation
-    let rec = prob >= 75 ? 'Highly recommended for immediate outreach. ' : prob >= 55 ? 'Good candidate for outreach. ' : 'Include in pipeline for future consideration. ';
-    if (gRating && parseFloat(gRating) >= 4.5) rec += `The combination of strong operational history and excellent reviews makes them an ideal candidate for a space in ${escHtml(neighborhood || 'the area')}.`;
-
-    // Online presence cards
-    const presCards = [
-        gRating  ? `<div class="bg-white border border-gray-100 rounded-xl p-4 text-center"><div class="text-yellow-400 text-base mb-1">★</div><div class="text-xl font-bold text-gray-900">${gRating}</div><div class="text-xs text-gray-400 mt-0.5">Google · ${gReviews} reviews</div></div>` : null,
-        igHandle ? `<div class="bg-white border border-gray-100 rounded-xl p-4 text-center"><i class="fa-brands fa-instagram text-pink-500 text-base mb-1 block"></i><div class="text-sm font-bold text-gray-900 truncate">@${escHtml(igHandle)}</div><div class="text-xs text-gray-400 mt-0.5">Instagram</div></div>` : null,
-        website  ? `<div class="bg-white border border-gray-100 rounded-xl p-4 text-center"><i class="fa-solid fa-globe text-blue-400 text-base mb-1 block"></i><div class="text-sm font-bold text-gray-900 truncate">${escHtml(website.replace(/^https?:\/\//,'').split('/')[0])}</div><div class="text-xs text-gray-400 mt-0.5">Website</div></div>` : null,
-    ].filter(Boolean).join('');
-
-    const overviewRows = [
-        ['Trade Name',   escHtml(tradeName)],
-        ['Entity Name',  escHtml(entityName)],
-        ['Status',       status ? `<span class="font-semibold ${status.toLowerCase()==='active'?'text-teal-600':'text-red-500'}">${escHtml(status.charAt(0).toUpperCase()+status.slice(1))}</span>` : ''],
-        ['Est. Date',    escHtml(estDate)],
-        ['Years Active', escHtml(yearsActive)],
-        ['Address',      escHtml(address)],
-        ['Neighborhood', escHtml(neighborhood)],
-        ['Industry',     escHtml(sb.industry || '')],
-    ].filter(([,v]) => v);
-
-    const nameStr = name.replace(/'/g, "\\'");
-
-    return `
-    <div class="flex items-start space-x-3">
-        <div class="bg-teal-500 text-white rounded-lg h-8 w-8 flex items-center justify-center flex-shrink-0 mt-1 text-xs font-bold">M</div>
-        <div class="flex-1 min-w-0">
-            <p class="text-xs font-semibold text-gray-400 mb-2">MMG Agent</p>
-            <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                <div class="flex items-start justify-between px-7 pt-6 pb-5 border-b border-gray-100">
-                    <div>
-                        <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Company Research Report</p>
-                        <h2 class="text-2xl font-bold text-gray-900">${escHtml(name)}</h2>
-                        <p class="text-xs text-gray-400 mt-0.5">Generated by MMG Agent · ${escHtml(date)}</p>
-                    </div>
-                    <div class="flex items-center gap-2 flex-shrink-0 mt-1">
-                        <button class="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50">
-                            <i class="fa-solid fa-share-nodes text-[10px]"></i> Share
-                        </button>
-                        <button class="flex items-center gap-1.5 text-xs text-white bg-gray-900 hover:bg-gray-700 rounded-lg px-3 py-1.5">
-                            <i class="fa-solid fa-download text-[10px]"></i> Download PDF
-                        </button>
-                    </div>
-                </div>
-                <div class="px-7 py-6 space-y-7">
-                    <div>
-                        <h3 class="text-sm font-bold text-gray-900 mb-2">Executive Summary</h3>
-                        <p class="text-sm text-gray-600 leading-relaxed">${execSummary}</p>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-gray-900 mb-3">Business Overview</h3>
-                        <div class="grid grid-cols-2 gap-4 bg-gray-50 rounded-xl p-5">
-                            ${overviewRows.map(([label,val])=>`<div><div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">${label}</div><div class="text-sm text-gray-800">${val}</div></div>`).join('')}
-                        </div>
-                    </div>
-                    ${presCards ? `<div><h3 class="text-sm font-bold text-gray-900 mb-3">Online Presence</h3><div class="grid grid-cols-3 gap-3">${presCards}</div></div>` : ''}
-                    ${(ownerName||ownerEmail||ownerPhone||bizPhone||genEmail) ? `<div>
-                        <h3 class="text-sm font-bold text-gray-900 mb-3">Owner &amp; Contact Intelligence</h3>
-                        <div class="border border-gray-100 rounded-xl overflow-hidden">
-                            <table class="w-full text-xs">
-                                <thead class="bg-gray-50 border-b border-gray-100"><tr>${['Owner','Direct Email','Direct Cell','Business Phone','General Email'].map(h=>`<th class="px-4 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wide text-[10px]">${h}</th>`).join('')}</tr></thead>
-                                <tbody><tr>
-                                    <td class="px-4 py-3 text-gray-800 font-medium">${escHtml(ownerName)||'—'}</td>
-                                    <td class="px-4 py-3 text-teal-600">${escHtml(ownerEmail)||'—'}</td>
-                                    <td class="px-4 py-3">${ownerPhone?`<div class="text-gray-800">${escHtml(ownerPhone)}</div><div class="text-teal-500 text-[10px]">SMS ready</div>`:'—'}</td>
-                                    <td class="px-4 py-3 text-gray-700">${escHtml(bizPhone)||'—'}</td>
-                                    <td class="px-4 py-3 text-gray-600">${escHtml(genEmail)||'—'}</td>
-                                </tr></tbody>
-                            </table>
-                        </div>
-                    </div>` : ''}
-                    <div>
-                        <h3 class="text-sm font-bold text-gray-900 mb-3">Expansion Signals</h3>
-                        <div class="border-l-4 border-teal-500 bg-gray-50 rounded-r-xl px-5 py-4">
-                            <div class="flex items-baseline gap-3 mb-3">
-                                <span class="text-3xl font-black" style="color:${probColor}">${prob}%</span>
-                                <div><div class="text-xs font-bold text-gray-700 uppercase tracking-wider">Expansion Probability</div><div class="text-xs text-gray-400">${signals.length} signal${signals.length!==1?'s':''} detected</div></div>
-                            </div>
-                            <ul class="space-y-1.5">${signals.map(s=>`<li class="flex items-start gap-2 text-sm text-gray-700"><span class="w-1.5 h-1.5 rounded-full bg-teal-500 mt-1.5 flex-shrink-0"></span>${escHtml(s)}</li>`).join('')}</ul>
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-gray-900 mb-2">Agent Recommendation</h3>
-                        <p class="text-sm text-gray-600 leading-relaxed mb-4">${rec}</p>
-                        <div class="flex flex-wrap gap-2">
-                            <button onclick="sendMessage('Add ${nameStr} to HubSpot')" class="bg-teal-500 hover:bg-teal-600 text-white text-sm font-medium px-4 py-2 rounded-full">Add to HubSpot</button>
-                            <button onclick="sendMessage('Draft an outreach email for ${nameStr}')" class="border border-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-full hover:bg-gray-50">Draft outreach email</button>
-                            <button onclick="sendMessage('Schedule a follow-up for ${nameStr}')" class="border border-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-full hover:bg-gray-50">Schedule follow-up</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-}
-
 // ── Leads table ────────────────────────────────────────────────────────────
-function renderLeadsTable(leads, toolName) {
+function renderLeadsTable(leads) {
     // Score: data completeness heuristic (0-100)
     function scoreOf(l, i) {
         let s = 95 - (i * 3);
@@ -2063,134 +856,225 @@ function renderLeadsTable(leads, toolName) {
         if (!l.owner_name) s -= 5;
         return Math.max(30, Math.min(99, Math.round(s)));
     }
+    // Get city/state for display
     function cityOf(l) {
+        // Use dedicated city/state fields first
         if (l.city && l.state) return l.city + ', ' + l.state;
         if (l.city) return l.city;
         if (l.state) return l.state;
+        // Fall back to parsing from address string "123 Main St, Miami, FL 33101"
         const addr = l.address || '';
         const parts = addr.split(',').map(s => s.trim());
         if (parts.length >= 3) return parts[parts.length - 2];
         if (parts.length === 2) return parts[0];
         return '—';
     }
+    // Formation year badge text
+    function estBadge(l) {
+        const parts = [];
+        if (l.industry) parts.push(escHtml(l.industry));
+        if (l.formation_date) {
+            // Just grab month+year from date string
+            const d = new Date(l.formation_date);
+            const lbl = isNaN(d) ? l.formation_date : d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+            parts.push('Est. ' + lbl);
+        } else if (l.years_in_business) {
+            parts.push(escHtml(l.years_in_business));
+        }
+        return parts.join(' · ') || null;
+    }
+    // Score ring colour
+    function scoreColor(s) {
+        if (s >= 85) return 'bg-teal-50 text-teal-700 border-teal-300';
+        if (s >= 65) return 'bg-amber-50 text-amber-700 border-amber-300';
+        return 'bg-gray-50 text-gray-500 border-gray-300';
+    }
 
-    const isApollo = toolName === 'apollo_search_people';
-    const ts = Date.now();
     const displayed = leads.slice(0, 20);
-
     const rows = displayed.map((l, i) => {
         const score = scoreOf(l, i);
-        const name  = escHtml(l.trade_name || l.entity_name || l.company || '—');
-        const city  = escHtml(cityOf(l));
-        const phone = l.business_phone || l.owner_phone || '';
-        const email = l.owner_email || l.general_email || l.reg_agent_email || '';
+        const city  = cityOf(l);
+        const badge = estBadge(l);
+        const tradeName  = escHtml(l.trade_name  || l.entity_name || l.company || '—');
+        const entityName = escHtml(l.entity_name || '');
+        const phone   = escHtml(l.business_phone || l.owner_phone || '');
         const website = l.website ? l.website.replace(/^https?:\/\//,'').replace(/\/$/,'').split('/')[0] : '';
-        const rowId = `ld-${ts}-${i}`;
+        const igRaw   = l.instagram_url || '';
+        const igHandle = igRaw ? ('@' + igRaw.replace(/^https?:\/\/(www\.)?instagram\.com\//,'').replace(/\/$/,'')) : '';
+        const rating  = l.google_rating ? parseFloat(l.google_rating).toFixed(1) : '';
+        const reviews = l.google_review_count ? parseInt(l.google_review_count).toLocaleString() : '';
 
-        // Score pill: blue gradient for 70+, gray for lower
-        const scorePill = score >= 70
-            ? `<span class="inline-flex items-center justify-center min-w-[2.75rem] px-3 py-1 rounded-full text-sm font-bold text-white" style="background:linear-gradient(135deg,#0d9488,#2563eb)">${score}</span>`
-            : `<span class="inline-flex items-center justify-center min-w-[2.75rem] px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-400 border border-gray-200">${score}</span>`;
+        const starsHtml = rating ? (() => {
+            const r = parseFloat(rating);
+            const full = Math.floor(r), half = (r % 1) >= 0.5 ? 1 : 0, empty = 5 - full - half;
+            return '<span class="text-yellow-400 text-xs">' +
+                '★'.repeat(full) + (half ? '½' : '') + '<span class="text-gray-200">' + '★'.repeat(empty) + '</span></span>';
+        })() : '';
 
-        // Detail panel
+        const rowId = `lead-detail-${i}-${Date.now()}`;
+        const fbRaw = l.facebook_url || '';
+
+        // Detail panel — all 15 fields
         const detailPanel = `
         <tr id="${rowId}" class="hidden bg-slate-50 border-b border-gray-100">
-            <td colspan="5" class="px-5 py-4">
+            <td colspan="6" class="px-5 py-4">
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-xs">
-                    <div class="col-span-3 pb-1 mb-1 border-b border-gray-200">
+                    <div class="col-span-2 md:col-span-3 pb-1 mb-1 border-b border-gray-200">
                         <span class="font-semibold text-gray-700 text-[11px] uppercase tracking-wide">Full Lead Details</span>
                     </div>
                     ${[
-                        ['Trade Name',    l.trade_name],
-                        ['Entity Name',   l.entity_name],
-                        ['Formation',     l.formation_date],
-                        ['Industry',      l.industry],
-                        ['Employees',     l.employees],
-                        ['Business Phone',l.business_phone],
-                        ['Website',       l.website ? `<a href="${escHtml(l.website)}" target="_blank" class="text-teal-600 underline">${escHtml(l.website)}</a>` : ''],
-                        ['LinkedIn',      l.linkedin_url ? `<a href="${escHtml(l.linkedin_url)}" target="_blank" class="text-blue-600 underline">View</a>` : ''],
-                        ['General Email', l.general_email],
-                        ['Owner Name',    l.owner_name],
-                        ['Owner Email',   l.owner_email],
-                        ['Owner Phone',   l.owner_phone],
+                        ['Trade Name',        l.trade_name],
+                        ['Entity Name (Sunbiz)', l.entity_name],
+                        ['Formation Date',    l.formation_date],
+                        ['Years in Business', l.years_in_business],
+                        ['General Email',     l.general_email],
+                        ['Business Phone',    l.business_phone],
+                        ['Address',           l.address],
+                        ['Website',           l.website ? `<a href="${escHtml(l.website)}" target="_blank" class="text-teal-600 underline">${escHtml(l.website)}</a>` : ''],
+                        ['Instagram',         l.instagram_url ? `<a href="${escHtml(l.instagram_url)}" target="_blank" class="text-pink-500 underline">${escHtml(l.instagram_url)}</a>` : ''],
+                        ['Facebook',          l.facebook_url ? `<a href="${escHtml(l.facebook_url)}" target="_blank" class="text-blue-600 underline">${escHtml(l.facebook_url)}</a>` : ''],
+                        ['Google Rating',     l.google_rating ? `${l.google_rating} ★ (${l.google_review_count || 0} reviews)` : ''],
                     ].map(([label, val]) => `
                         <div>
                             <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">${label}</div>
                             <div class="text-gray-700">${val || '<span class="text-gray-300">—</span>'}</div>
+                        </div>`).join('')}
+                    <!-- Owner section -->
+                    <div class="col-span-2 md:col-span-3 pt-2 mt-1 border-t border-gray-200">
+                        <span class="font-semibold text-gray-700 text-[11px] uppercase tracking-wide">Owner</span>
+                    </div>
+                    ${[
+                        ['Owner Name',  l.owner_name],
+                        ['Owner Email', l.owner_email],
+                        ['Owner Phone', l.owner_phone],
+                    ].map(([label, val]) => `
+                        <div>
+                            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">${label}</div>
+                            <div class="text-gray-700">${val ? escHtml(val) : '<span class="text-gray-300">—</span>'}</div>
+                        </div>`).join('')}
+                    <!-- Registered Agent section -->
+                    <div class="col-span-2 md:col-span-3 pt-2 mt-1 border-t border-gray-200">
+                        <span class="font-semibold text-gray-700 text-[11px] uppercase tracking-wide">Registered Agent</span>
+                    </div>
+                    ${[
+                        ['Name',    l.registered_agent],
+                        ['Address', l.reg_agent_address],
+                        ['Email',   l.reg_agent_email],
+                        ['Phone',   l.reg_agent_phone],
+                    ].map(([label, val]) => `
+                        <div>
+                            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">${label}</div>
+                            <div class="text-gray-700">${val ? escHtml(val) : '<span class="text-gray-300">—</span>'}</div>
                         </div>`).join('')}
                 </div>
             </td>
         </tr>`;
 
         return `
-        <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+        <tr class="border-b border-gray-100 hover:bg-slate-50 transition-colors cursor-pointer"
             onclick="document.getElementById('${rowId}').classList.toggle('hidden')">
-            <td class="px-5 py-3.5">
-                <div class="font-semibold text-gray-900 text-sm">${name}</div>
-                <div class="flex items-center gap-1.5 mt-1">
-                    ${isApollo ? `<span class="text-[10px] font-medium bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Apollo</span>` : `<span class="text-[10px] font-medium bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded">Maps</span>`}
-                    <span class="text-[10px] font-medium bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Enriched</span>
+            <td class="px-4 py-3 max-w-[220px]">
+                <div class="flex items-start gap-2">
+                    <div>
+                        <div class="font-semibold text-gray-900 text-sm leading-tight">${tradeName}</div>
+                        ${entityName && entityName !== tradeName ? `<div class="text-xs text-gray-400 mt-0.5">${entityName}</div>` : ''}
+                        ${badge ? `<div class="mt-1.5">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-100">${badge}</span>
+                        </div>` : ''}
+                    </div>
+                    <i class="fa-solid fa-chevron-down text-gray-300 text-[10px] mt-1.5 flex-shrink-0"></i>
                 </div>
             </td>
-            <td class="px-5 py-3.5 text-sm text-gray-600">${city}</td>
-            <td class="px-5 py-3.5">
-                ${phone ? `<div class="text-sm text-gray-800">${escHtml(phone)}</div><span class="text-[10px] text-gray-400 mt-0.5 block">Direct</span>` : '<span class="text-gray-300 text-sm">—</span>'}
+            <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                <span class="inline-flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                    ${escHtml(city)}
+                </span>
             </td>
-            <td class="px-5 py-3.5">
-                ${email ? `<span class="text-sm text-teal-600">${escHtml(email)}</span>` : (website ? `<a href="${escHtml(l.website)}" target="_blank" class="text-sm text-blue-500 hover:underline" onclick="event.stopPropagation()">${escHtml(website)}</a>` : '<span class="text-gray-300 text-sm">—</span>')}
+            <td class="px-4 py-3">
+                <span class="inline-flex items-center justify-center w-9 h-9 rounded-full border-2 font-bold text-sm ${scoreColor(score)}">${score}</span>
             </td>
-            <td class="px-5 py-3.5 text-right">${scorePill}</td>
+            <td class="px-4 py-3 text-xs space-y-1 min-w-[160px]">
+                ${phone ? `<div class="flex items-center gap-1.5 text-gray-700">
+                    <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+                    <span>${phone}</span>
+                </div>` : ''}
+                ${website ? `<div class="flex items-center gap-1.5">
+                    <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>
+                    <a href="${escHtml(l.website)}" target="_blank" class="text-teal-600 hover:text-teal-800 hover:underline truncate max-w-[130px] block" onclick="event.stopPropagation()">${escHtml(website)}</a>
+                </div>` : ''}
+                ${igHandle ? `<div class="flex items-center gap-1.5 text-pink-500">
+                    <svg class="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+                    <a href="${escHtml(igRaw)}" target="_blank" class="hover:underline truncate max-w-[130px] block" onclick="event.stopPropagation()">${escHtml(igHandle)}</a>
+                </div>` : ''}
+                ${!phone && !website && !igHandle ? '<span class="text-gray-300">—</span>' : ''}
+            </td>
+            <td class="px-4 py-3 whitespace-nowrap">
+                ${rating ? `<div class="flex flex-col gap-0.5">
+                    <div class="flex items-center gap-1">
+                        ${starsHtml}
+                        <span class="text-xs font-semibold text-gray-700 ml-0.5">${rating}</span>
+                    </div>
+                    ${reviews ? `<div class="text-[10px] text-gray-400">(${reviews} reviews)</div>` : ''}
+                </div>` : '<span class="text-gray-300 text-xs">—</span>'}
+            </td>
         </tr>
         ${detailPanel}`;
     }).join('');
 
-    // Source branding
-    const avatarBg  = isApollo ? 'bg-gray-900' : 'bg-teal-500';
-    const avatarLetter = isApollo ? 'A' : 'M';
-    const title     = isApollo ? 'Apollo.io Search Results' : 'Search Results';
-    const footerHtml = isApollo
-        ? `<div class="px-5 py-3 border-t border-gray-100"><p class="text-xs text-gray-400 italic">Data sourced from Apollo.io · Accuracy not guaranteed · ${displayed.length} credits used this search</p></div>`
-        : '';
-
     return `
     <div class="flex items-start space-x-4">
         <div class="w-8 flex-shrink-0"></div>
-        <div class="flex-1">
-            <div class="bg-white rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style="border-top:3px solid #111827">
-                <!-- Header -->
-                <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center text-white font-bold text-sm flex-shrink-0">${avatarLetter}</div>
-                        <span class="font-bold text-gray-900 text-base">${title}</span>
-                    </div>
-                    <span class="text-sm text-gray-400">${leads.length.toLocaleString()} results</span>
+        <div class="flex-1 mt-2">
+            <!-- Summary line -->
+            <p class="text-sm text-gray-600 mb-3">
+                Found <strong class="text-gray-900">${leads.length} prospects</strong> matching your criteria.
+                Top results ranked by expansion probability — all verified active Florida licenses with Sunbiz entity data enriched.
+            </p>
+            <!-- Table card -->
+            <div class="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div class="bg-white px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">${leads.length} Results</span>
+                    <a href="/api/download/leads" class="inline-flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-800 font-medium">
+                        <i class="fa-solid fa-download text-[10px]"></i> Download CSV
+                    </a>
                 </div>
-                <!-- Table -->
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead class="border-b border-gray-100">
-                            <tr>
-                                <th class="px-5 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Business</th>
-                                <th class="px-5 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Location</th>
-                                <th class="px-5 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Phone</th>
-                                <th class="px-5 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Email</th>
-                                <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Score</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white">${rows}</tbody>
-                    </table>
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                            <th class="px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Business / Entity <span class="normal-case font-normal text-gray-300">(click to expand)</span></th>
+                            <th class="px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Location</th>
+                            <th class="px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Score</th>
+                            <th class="px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Contact</th>
+                            <th class="px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Google</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-50">${rows}</tbody>
+                </table>
                 </div>
-                ${footerHtml}
-                ${leads.length > 20 ? `<div class="px-5 py-2 text-xs text-gray-400 bg-gray-50 border-t border-gray-100 text-center">+${leads.length - 20} more · <a href="/api/download/leads" class="text-teal-600 hover:underline">Download CSV</a></div>` : ''}
+                ${leads.length > 20 ? `<div class="px-4 py-2 text-xs text-gray-400 bg-gray-50 border-t border-gray-100 text-center">
+                    +${leads.length - 20} more rows available in the CSV download
+                </div>` : ''}
             </div>
             <!-- Quick action buttons -->
             <div class="flex flex-wrap gap-2 mt-3">
-                <button onclick="sendMessage('Draft personalized outreach emails for these leads')"
-                    class="text-sm text-gray-700 border border-gray-200 bg-white rounded-full px-4 py-2 hover:bg-gray-50 transition-colors shadow-sm">Draft all emails</button>
                 <button onclick="sendMessage('Upload these leads to HubSpot')"
-                    class="text-sm text-gray-700 border border-gray-200 bg-white rounded-full px-4 py-2 hover:bg-gray-50 transition-colors shadow-sm">Upload to HubSpot</button>
-                <button onclick="sendMessage('Search for more leads with similar criteria')"
-                    class="text-sm text-gray-700 border border-gray-200 bg-white rounded-full px-4 py-2 hover:bg-gray-50 transition-colors shadow-sm">Refine search</button>
+                    class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors">
+                    <i class="fa-brands fa-hubspot text-[11px]"></i> Upload these to HubSpot
+                </button>
+                <button onclick="sendMessage('Pull more leads from this search')"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors">
+                    <i class="fa-solid fa-magnifying-glass text-[11px]"></i> Pull more results
+                </button>
+                <button onclick="sendMessage('Write outreach emails for these leads')"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition-colors">
+                    <i class="fa-solid fa-envelope text-[11px]"></i> Write outreach emails
+                </button>
+                <button onclick="sendMessage('Export these leads to CSV')"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition-colors">
+                    <i class="fa-solid fa-download text-[11px]"></i> Export CSV
+                </button>
             </div>
         </div>
     </div>`;
@@ -2204,135 +1088,69 @@ async function loadConnectors() {
         const grid = document.getElementById('connectors-grid');
         const connectors = [
             {
-                key: 'anthropic', name: 'Anthropic',
-                iconImg: 'https://upload.wikimedia.org/wikipedia/commons/7/78/Anthropic_logo.svg',
-                icon: 'fa-solid fa-robot', color: 'text-purple-600', iconBg: 'bg-gray-900',
-                subtitle: 'Powering agent reasoning · Claude',
-                configured: config.anthropic, action: 'settings',
-                capabilities: ['Powers all agent reasoning and decision-making','Natural language understanding and generation','Research synthesis and report generation','Email drafting, calendar coordination, and communication'],
-                models: [
-                    { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tag: 'Most capable', tagColor: 'bg-gray-100 text-gray-600', desc: 'Most powerful, best for complex reasoning' },
-                    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tag: 'Recommended', tagColor: 'bg-teal-50 text-teal-600', desc: 'Best balance of speed and intelligence' },
-                    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tag: 'Fastest', tagColor: 'bg-blue-50 text-blue-600', desc: 'Fastest responses, great for simple tasks' },
-                ],
+                key: 'anthropic', name: 'Anthropic Claude',
+                icon: 'fa-solid fa-robot', color: 'text-purple-600',
+                desc: 'AI model powering the agent. Required for all operations.',
+                configured: config.anthropic,
+                action: 'settings',
             },
             {
                 key: 'hubspot', name: 'HubSpot',
-                icon: 'fa-brands fa-hubspot', color: 'text-orange-500', iconBg: 'bg-orange-50',
-                subtitle: 'CRM · Contacts & pipeline',
-                configured: config.hubspot, action: 'settings',
-                capabilities: ['Sync enriched leads as contacts automatically','Track deal pipeline and contact activity','Upload bulk contacts with full field mapping','View contact history and engagement data'],
+                icon: 'fa-brands fa-hubspot', color: 'text-orange-500',
+                desc: 'CRM platform. Sync contacts and companies automatically.',
+                configured: config.hubspot,
+                action: 'settings',
             },
             {
                 key: 'apollo', name: 'Apollo.io',
-                icon: 'fa-solid fa-magnifying-glass', color: 'text-gray-700', iconBg: 'bg-gray-100',
-                subtitle: 'B2B lead database',
-                configured: config.apollo, action: 'settings',
-                capabilities: ['Search millions of B2B companies by industry and location','Access verified email addresses and phone numbers','Filter by company size, revenue, and growth signals','Enrich leads with firmographic data'],
+                icon: 'fa-solid fa-magnifying-glass', color: 'text-gray-700',
+                desc: 'B2B lead database. Search companies and contacts.',
+                configured: config.apollo,
+                action: 'settings',
             },
             {
                 key: 'gmail', name: 'Gmail',
-                icon: 'fa-brands fa-google', color: 'text-red-500', iconBg: 'bg-red-50',
-                subtitle: 'Email · Send outreach',
-                configured: config.gmail, action: 'settings',
-                capabilities: ['Send personalized outreach emails from your Gmail','Save drafts for review before sending','Track sent emails per lead','Supports App Password authentication'],
-            },
-            {
-                key: 'teams', name: 'Microsoft Teams',
-                icon: 'fa-brands fa-microsoft', color: 'text-blue-500', iconBg: 'bg-blue-50',
-                subtitle: 'Notifications & collaboration',
-                configured: false, action: 'coming_soon',
-                capabilities: ['Get notified when new leads are found','Share lead reports directly in channels','Trigger agent tasks from Teams messages','Collaborate on outreach campaigns'],
-            },
-            {
-                key: 'docusign', name: 'DocuSign',
-                icon: 'fa-solid fa-file-signature', color: 'text-yellow-600', iconBg: 'bg-yellow-50',
-                subtitle: 'E-signatures · Lease agreements',
-                configured: false, action: 'coming_soon',
-                capabilities: ['Send lease agreements for e-signature','Track signing status in real time','Auto-fill tenant info from lead data','Store signed documents automatically'],
-            },
-            {
-                key: 'onedrive', name: 'Microsoft OneDrive',
-                icon: 'fa-brands fa-windows', color: 'text-blue-400', iconBg: 'bg-blue-50',
-                subtitle: 'File storage · Reports',
-                configured: false, action: 'coming_soon',
-                capabilities: ['Save lead reports and CSVs to OneDrive','Auto-organize files by date and search','Share reports with your team instantly','Sync outreach drafts across devices'],
+                icon: 'fa-brands fa-google', color: 'text-red-500',
+                desc: 'Send outreach emails directly from your Gmail account.',
+                configured: config.gmail,
+                action: 'settings',
             },
         ];
 
-        const activeModel = '${session.get("claude_model", "claude-sonnet-4-6") if False else "claude-sonnet-4-6"}';
-
         grid.innerHTML = connectors.map(c => {
-            const statusBadge = c.configured
-                ? `<span class="flex items-center gap-1.5 text-xs font-medium text-teal-600 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block"></span> Connected</span>`
-                : c.action === 'coming_soon'
-                ? `<span class="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming soon</span>`
-                : `<span class="text-xs text-gray-400">Not connected</span>`;
-
-            const capabilitiesHtml = c.capabilities ? `
-                <div class="mt-4 pt-4 border-t border-gray-100">
-                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Capabilities</p>
-                    <ul class="space-y-1.5">
-                        ${c.capabilities.map(cap => `
-                        <li class="flex items-start gap-2 text-xs text-gray-600">
-                            <span class="w-1.5 h-1.5 rounded-full bg-teal-500 mt-1 flex-shrink-0"></span>
-                            ${cap}
-                        </li>`).join('')}
-                    </ul>
-                </div>` : '';
-
-            const modelsHtml = c.models ? `
-                <div class="mt-4 pt-4 border-t border-gray-100">
-                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Active Model</p>
-                    <div class="space-y-2">
-                        ${c.models.map(m => `
-                        <label class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${m.id === 'claude-sonnet-4-6' ? 'border-teal-300 bg-teal-50/50' : 'border-gray-200 hover:border-gray-300'}" onclick="selectModel('${m.id}', this); event.stopPropagation()">
-                            <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${m.id === 'claude-sonnet-4-6' ? 'border-teal-500' : 'border-gray-300'}">
-                                ${m.id === 'claude-sonnet-4-6' ? '<div class="w-2 h-2 rounded-full bg-teal-500"></div>' : ''}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-sm font-medium text-gray-900">${m.label}</span>
-                                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full ${m.tagColor}">${m.tag}</span>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-0.5">${m.desc}</p>
-                            </div>
-                        </label>`).join('')}
-                    </div>
-                </div>` : '';
-
-            const actionBtn = c.action === 'coming_soon'
-                ? ''
-                : `<div class="mt-4 pt-4 border-t border-gray-100">
-                    <button onclick="toggleSettings(); event.stopPropagation()" class="text-xs text-teal-600 hover:text-teal-800 font-medium flex items-center gap-1">
-                        Configure <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
-                    </button>
-                   </div>`;
-
+            let btnHtml;
+            if (c.action === 'gmail') {
+                if (c.configured) {
+                    btnHtml = `
+                        <div class="flex gap-2">
+                            <button onclick="connectGmail()" class="flex-1 text-center text-xs font-medium py-1.5 rounded-lg border border-teal-200 text-teal-600 bg-teal-50 hover:bg-teal-100 transition-colors">Reconnect</button>
+                            <button onclick="disconnectGmail()" class="text-xs font-medium py-1.5 px-3 rounded-lg border border-red-200 text-red-500 bg-red-50 hover:bg-red-100 transition-colors">Disconnect</button>
+                        </div>`;
+                } else if (c.clientSet) {
+                    btnHtml = `<button onclick="connectGmail()" class="w-full text-center text-xs font-medium py-1.5 rounded-lg border border-gray-200 text-gray-600 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"><i class="fa-brands fa-google text-red-500"></i> Connect with Google</button>`;
+                } else {
+                    btnHtml = `<button onclick="toggleSettings()" class="w-full text-center text-xs font-medium py-1.5 rounded-lg border border-gray-200 text-gray-600 bg-gray-50 hover:bg-gray-100 transition-colors">Add OAuth Credentials first</button>`;
+                }
+            } else {
+                btnHtml = `<button onclick="toggleSettings()" class="w-full text-center text-xs font-medium py-1.5 rounded-lg border ${c.configured ? 'border-teal-200 text-teal-600 bg-teal-50 hover:bg-teal-100' : 'border-gray-200 text-gray-600 bg-gray-50 hover:bg-gray-100'} transition-colors">${c.configured ? 'Configure' : 'Connect'}</button>`;
+            }
             return `
-            <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm transition-shadow connector-card" data-key="${c.key}">
-                <!-- Header -->
-                <div class="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity" onclick="toggleConnector('${c.key}')"  >
+            <div class="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
                     <div class="flex items-center gap-3">
-                        <div class="w-11 h-11 rounded-xl ${c.iconBg} flex items-center justify-center flex-shrink-0">
+                        <div class="w-10 h-10 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center">
                             <i class="${c.icon} ${c.color} text-xl"></i>
                         </div>
                         <div>
                             <div class="font-semibold text-gray-900 text-sm">${c.name}</div>
-                            <div class="text-xs text-gray-400 mt-0.5">${c.subtitle}</div>
+                            ${c.configured
+                                ? '<span class="text-xs text-teal-600 font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block"></span> Connected</span>'
+                                : '<span class="text-xs text-gray-400">Not connected</span>'}
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        ${statusBadge}
-                        <i class="fa-solid fa-chevron-down text-gray-400 text-xs connector-chevron transition-transform ml-1"></i>
-                    </div>
                 </div>
-                <!-- Expandable body -->
-                <div class="connector-body hidden">
-                    ${capabilitiesHtml}
-                    ${modelsHtml}
-                    ${actionBtn}
-                </div>
+                <p class="text-xs text-gray-500 mb-4">${c.desc}</p>
+                ${btnHtml}
             </div>`;
         }).join('');
     } catch (e) {
@@ -2373,98 +1191,6 @@ function toggleSettings() {
 document.getElementById('settings-modal').addEventListener('click', function(e) {
     if (e.target === this) toggleSettings();
 });
-
-function showSettingsTab(tab) {
-    ['general','security','notifications','sessions'].forEach(t => {
-        document.getElementById(`settings-${t}`).classList.add('hidden');
-    });
-    document.getElementById(`settings-${tab}`).classList.remove('hidden');
-    document.querySelectorAll('.settings-tab').forEach(btn => {
-        const active = btn.dataset.tab === tab;
-        btn.classList.toggle('bg-gray-100', active);
-        btn.classList.toggle('text-gray-900', active);
-        btn.classList.toggle('text-gray-500', !active);
-    });
-}
-
-async function loadProfile() {
-    try {
-        const resp = await fetch('/api/profile');
-        const p = await resp.json();
-        document.getElementById('profile-name').value    = p.full_name || '';
-        document.getElementById('profile-email').value   = p.email     || '';
-        document.getElementById('profile-role').value    = p.role      || '';
-        document.getElementById('profile-company').value = p.company   || '';
-        const initials = p.initials || (p.full_name || 'G')[0].toUpperCase();
-        document.getElementById('settings-avatar').textContent       = initials;
-        document.getElementById('settings-display-name').textContent = p.full_name || '';
-        document.getElementById('settings-display-email').textContent = p.email || '';
-        // Update sidebar
-        document.getElementById('sidebar-avatar').textContent = initials;
-        document.getElementById('sidebar-name').textContent   = p.full_name || 'Gabe';
-        document.getElementById('sidebar-role').textContent   = p.role      || 'MMG Broker';
-    } catch(e) {}
-}
-
-async function saveProfile() {
-    const body = {
-        full_name: document.getElementById('profile-name').value,
-        email:     document.getElementById('profile-email').value,
-        role:      document.getElementById('profile-role').value,
-        company:   document.getElementById('profile-company').value,
-    };
-    const msgEl = document.getElementById('profile-msg');
-    try {
-        const resp = await fetch('/api/profile', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(body)
-        });
-        const data = await resp.json();
-        if (data.ok) {
-            msgEl.textContent = '✓ Profile saved';
-            msgEl.className   = 'mt-3 text-sm text-teal-600 font-medium';
-            msgEl.classList.remove('hidden');
-            loadProfile();
-            setTimeout(() => msgEl.classList.add('hidden'), 3000);
-        }
-    } catch(e) {
-        msgEl.textContent = 'Error saving profile';
-        msgEl.className   = 'mt-3 text-sm text-red-500 font-medium';
-        msgEl.classList.remove('hidden');
-    }
-}
-
-async function changePassword() {
-    const body = {
-        current_password:  document.getElementById('pw-current').value,
-        new_password:      document.getElementById('pw-new').value,
-        confirm_password:  document.getElementById('pw-confirm').value,
-    };
-    const msgEl = document.getElementById('pw-msg');
-    try {
-        const resp = await fetch('/api/change_password', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(body)
-        });
-        const data = await resp.json();
-        msgEl.classList.remove('hidden');
-        if (data.ok) {
-            msgEl.textContent = '✓ Password updated successfully';
-            msgEl.className = 'mt-3 text-sm text-teal-600 font-medium';
-            ['pw-current','pw-new','pw-confirm'].forEach(id => document.getElementById(id).value = '');
-        } else {
-            msgEl.textContent = data.error || 'Error updating password';
-            msgEl.className = 'mt-3 text-sm text-red-500 font-medium';
-        }
-        setTimeout(() => msgEl.classList.add('hidden'), 4000);
-    } catch(e) {
-        msgEl.textContent = 'Connection error';
-        msgEl.className = 'mt-3 text-sm text-red-500 font-medium';
-        msgEl.classList.remove('hidden');
-    }
-}
 
 async function saveConfig() {
     const body = {
@@ -2811,7 +1537,6 @@ async function loadPerformance() {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 showPage('tasks');
-loadProfile();
 </script>
 </body>
 </html>
