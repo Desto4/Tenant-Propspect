@@ -1,21 +1,98 @@
 import os
 import re
+import sys
 import json
 import csv
 import io
 import base64
+import subprocess
+import threading
 import email as email_lib
 import email.mime.text
 from datetime import datetime
 from urllib.parse import quote_plus, urljoin, urlparse
 
-# Load .env file if present (so keys don't need to be entered in the UI)
-try:
-    from dotenv import load_dotenv
-    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    load_dotenv(_env_path, override=True)
-except ImportError:
-    pass
+
+def _strip_env_quotes(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def _load_local_env():
+    """Load .env from the repo root even if python-dotenv is unavailable."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_path):
+        return
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(env_path, override=True)
+        return
+    except ImportError:
+        pass
+
+    # Minimal fallback parser for simple KEY=VALUE .env files.
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if not key:
+                    continue
+                os.environ[key] = _strip_env_quotes(value)
+    except Exception:
+        pass
+
+
+_load_local_env()
+
+_PLAYWRIGHT_INSTALL_LOCK = threading.Lock()
+_PLAYWRIGHT_CHROMIUM_READY = False
+
+
+def _is_missing_playwright_browser_error(exc):
+    msg = str(exc)
+    return (
+        "BrowserType.launch" in msg
+        and "Executable doesn't exist" in msg
+    )
+
+
+def _ensure_playwright_chromium():
+    global _PLAYWRIGHT_CHROMIUM_READY
+    if _PLAYWRIGHT_CHROMIUM_READY:
+        return
+    with _PLAYWRIGHT_INSTALL_LOCK:
+        if _PLAYWRIGHT_CHROMIUM_READY:
+            return
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=600,
+        )
+        _PLAYWRIGHT_CHROMIUM_READY = True
+
+
+def _launch_chromium_resilient(playwright_obj, **kwargs):
+    try:
+        return playwright_obj.chromium.launch(**kwargs)
+    except Exception as exc:
+        if not _is_missing_playwright_browser_error(exc):
+            raise
+        _ensure_playwright_chromium()
+        return playwright_obj.chromium.launch(**kwargs)
 
 import requests
 from flask import Flask, request, session, Response, send_file, jsonify, render_template
@@ -38,7 +115,6 @@ app.secret_key = os.urandom(24)
 _leads_store    = []
 _outreach_store = []
 _perf_store     = []   # performance records [{provider, model, duration_ms, ...}]
-_hunter_key     = ""   # Hunter.io API key (set from settings)
 
 _PROFILE_FILE = os.path.join(os.path.dirname(__file__), ".user_profile.json")
 
@@ -72,7 +148,7 @@ _GMAIL_SCOPES       = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
-_GMAIL_REDIRECT_URI = "http://localhost:8502/api/gmail/callback"
+_GMAIL_REDIRECT_URI = "http://localhost:8504/api/gmail/callback"
 
 def _load_gmail_creds():
     """Load Gmail OAuth credentials from disk, refresh if expired."""
@@ -241,7 +317,8 @@ TOOLS = [
     {
         "name": "apollo_search_people",
         "description": (
-            "Search for companies/organizations on Apollo.io by keyword and location. "
+            "Search Apollo for companies by keyword/location and, when available, "
+            "attach the best matching contact email for each company. "
             "Only use this if the user explicitly asks for Apollo results."
         ),
         "input_schema": {
@@ -503,7 +580,11 @@ def search_businesses_maps(keyword, location, num_results=10):
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+            browser = _launch_chromium_resilient(
+                pw,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -726,23 +807,228 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
         "q_organization_keyword_tags": [keywords] if keywords else [],
         "organization_locations":      locations or [],
     }
+    headers = {
+        "Content-Type":  "application/json",
+        "Cache-Control": "no-cache",
+        "X-Api-Key":     apollo_key,
+    }
+
+    def _org_id(org):
+        return str(org.get("id") or org.get("organization_id") or "").strip()
+
+    def _person_org_id(person):
+        return str(
+            person.get("organization_id")
+            or (person.get("organization") or {}).get("id")
+            or ""
+        ).strip()
+
+    def _norm_org_name(value):
+        return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+    def _person_name(person):
+        name = (person.get("name") or "").strip()
+        if name:
+            return name
+        first = (person.get("first_name") or "").strip()
+        last = (
+            person.get("last_name")
+            or person.get("last_name_obfuscated")
+            or ""
+        ).strip()
+        return f"{first} {last}".strip()
+
+    def _person_rank(person):
+        title = (person.get("title") or "").lower()
+        email_status = (person.get("email_status") or person.get("email_status_cd") or "").lower()
+        score = 0
+        if person.get("has_email") or person.get("email"):
+            score += 100
+        if "verified" in email_status:
+            score += 30
+        elif "likely" in email_status:
+            score += 20
+        elif "unverified" in email_status:
+            score += 10
+        title_weights = [
+            ("owner", 80),
+            ("founder", 75),
+            ("chief executive", 70),
+            ("ceo", 70),
+            ("president", 60),
+            ("managing director", 55),
+            ("principal", 55),
+            ("partner", 55),
+            ("co-owner", 55),
+            ("head", 40),
+            ("director", 35),
+            ("manager", 25),
+        ]
+        for marker, weight in title_weights:
+            if marker in title:
+                score += weight
+                break
+        if person.get("linkedin_url"):
+            score += 5
+        return score
+
+    def _apollo_extract_person_email(person):
+        email = (person.get("email") or "").strip()
+        if email:
+            return email
+
+        for item in person.get("contact_emails") or []:
+            candidate = (item.get("email") or item.get("value") or "").strip()
+            if candidate:
+                return candidate
+
+        for item in person.get("emails") or []:
+            if isinstance(item, dict):
+                candidate = (item.get("email") or item.get("value") or "").strip()
+            else:
+                candidate = str(item).strip()
+            if candidate:
+                return candidate
+
+        return ""
+
+    def _apollo_enrich_people(selected_people):
+        enriched = {}
+        enrich_errors = []
+        if not selected_people:
+            return enriched, enrich_errors
+
+        for start in range(0, len(selected_people), 10):
+            chunk = selected_people[start:start + 10]
+            details = [{"id": pid} for pid, _person in chunk if pid]
+            if not details:
+                continue
+            try:
+                enrich_resp = requests.post(
+                    "https://api.apollo.io/api/v1/people/bulk_match",
+                    params={
+                        "reveal_personal_emails": "true",
+                        "reveal_phone_number": "false",
+                        "run_waterfall_phone": "false",
+                    },
+                    json={"details": details},
+                    headers=headers,
+                    timeout=30,
+                )
+                enrich_data = enrich_resp.json()
+                matches = enrich_data.get("matches") or []
+                if enrich_resp.status_code >= 400:
+                    enrich_errors.append(
+                        f"Apollo enrichment failed (HTTP {enrich_resp.status_code}): {enrich_data}"
+                    )
+                    continue
+                for match in matches:
+                    if not isinstance(match, dict):
+                        continue
+                    pid = str(match.get("id") or "").strip()
+                    if pid:
+                        enriched[pid] = match
+            except Exception as exc:
+                enrich_errors.append(f"Apollo enrichment failed: {exc}")
+                continue
+        return enriched, enrich_errors
+
+    def _fetch_apollo_people(orgs):
+        org_ids = [_org_id(org) for org in orgs if _org_id(org)]
+        if not org_ids:
+            return {}, []
+
+        org_name_to_id = {}
+        for org in orgs:
+            norm_name = _norm_org_name(org.get("name", ""))
+            org_id = _org_id(org)
+            if norm_name and org_id:
+                org_name_to_id[norm_name] = org_id
+
+        params = [
+            ("page", "1"),
+            ("per_page", str(min(max(len(org_ids) * 3, 10), 100))),
+            ("include_similar_titles", "true"),
+        ]
+        for org_id in org_ids:
+            params.append(("organization_ids[]", org_id))
+        for location in locations or []:
+            if location:
+                params.append(("organization_locations[]", location))
+        for status in ["verified", "likely to engage", "unverified"]:
+            params.append(("contact_email_status[]", status))
+        for seniority in ["owner", "founder", "c_suite", "partner", "vp", "head", "director", "manager"]:
+            params.append(("person_seniorities[]", seniority))
+        if keywords:
+            params.append(("q_keywords", keywords))
+
+        try:
+            people_resp = requests.post(
+                "https://api.apollo.io/api/v1/mixed_people/api_search",
+                params=params,
+                headers=headers,
+                timeout=30,
+            )
+            people_data = people_resp.json()
+            people = people_data.get("people") or []
+            if people_resp.status_code >= 400 or not isinstance(people, list):
+                return {}, [f"Apollo people search failed (HTTP {people_resp.status_code}): {people_data}"]
+
+            enriched, enrich_errors = _apollo_enrich_people([
+                (str(person.get("id") or "").strip(), person)
+                for person in people
+            ])
+
+            grouped = {}
+            for person in people:
+                if not isinstance(person, dict):
+                    continue
+                pid = str(person.get("id") or "").strip()
+                enriched_person = enriched.get(pid, {})
+                merged_person = {**person, **enriched_person}
+
+                matched_org_id = _person_org_id(merged_person)
+                if not matched_org_id:
+                    matched_org_name = _norm_org_name(
+                        (merged_person.get("organization") or {}).get("name", "")
+                    )
+                    matched_org_id = org_name_to_id.get(matched_org_name, "")
+                if not matched_org_id:
+                    continue
+                grouped.setdefault(matched_org_id, []).append(merged_person)
+
+            selected = {}
+            for matched_org_id, candidates in grouped.items():
+                selected[matched_org_id] = max(candidates, key=_person_rank)
+            return selected, enrich_errors
+        except Exception as exc:
+            return {}, [f"Apollo people search failed: {exc}"]
+
     try:
         r = requests.post(
             "https://api.apollo.io/v1/organizations/search",
             json=payload,
-            headers={
-                "Content-Type":  "application/json",
-                "Cache-Control": "no-cache",
-                "X-Api-Key":     apollo_key,
-            },
+            headers=headers,
             timeout=30,
         )
         data = r.json()
         if "organizations" not in data:
             return {"error": f"Apollo error (HTTP {r.status_code}): {data}"}
 
+        organizations = data["organizations"]
+        people_by_org, apollo_errors = _fetch_apollo_people(organizations)
+        if apollo_errors:
+            return {
+                "error": (
+                    "Apollo found organizations, but contact email reveal failed. "
+                    + " ".join(apollo_errors)
+                )
+            }
+
         leads = []
-        for org in data["organizations"]:
+        for org in organizations:
+            org_id = _org_id(org)
+            best_person = people_by_org.get(org_id, {})
             # Phone — try multiple fields
             phone = org.get("phone") or ""
             if not phone:
@@ -764,17 +1050,17 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
 
             website = org.get("website_url", "")
 
-            # Pull email via Hunter.io silently
-            general_email = _hunter_domain_search(website) if website else ""
-
+            # Prefer Apollo contact email when available.
+            apollo_email = _apollo_extract_person_email(best_person)
+            owner_name = _person_name(best_person)
             lead = {
                 "trade_name":        org.get("name", ""),
                 "entity_name":       "",   # filled by sunbiz_lookup
                 "formation_date":    formation_date,
                 "years_in_business": years_in_business,
-                "general_email":     general_email,
-                "owner_name":        "",
-                "owner_email":       "",
+                "general_email":     "",
+                "owner_name":        owner_name,
+                "owner_email":       apollo_email,
                 "owner_phone":       "",
                 "registered_agent":  "",   # filled by sunbiz_lookup
                 "reg_agent_address": "",
@@ -787,15 +1073,24 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
                 "google_rating":     "",
                 "industry":          org.get("industry", ""),
                 "employees":         str(org.get("estimated_num_employees", "")),
-                "linkedin_url":      org.get("linkedin_url", ""),
+                "linkedin_url":      best_person.get("linkedin_url") or org.get("linkedin_url", ""),
                 "sunbiz_url":        "",
                 "sunbiz_status":     "",
             }
             leads.append(lead)
 
-        _leads_store = leads
-        _save_leads_to_file(leads)
-        return {"leads": leads, "total": len(leads)}
+        leads_with_email = [lead for lead in leads if lead.get("owner_email")]
+        if not leads_with_email:
+            return {
+                "error": (
+                    "Apollo search returned organizations, but no contact emails were revealed. "
+                    "Make sure the connected Apollo key has people enrichment/email reveal access."
+                )
+            }
+
+        _leads_store = leads_with_email
+        _save_leads_to_file(leads_with_email)
+        return {"leads": leads_with_email, "total": len(leads_with_email)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -811,7 +1106,11 @@ def sunbiz_lookup(business_name):
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+            browser = _launch_chromium_resilient(
+                pw,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1050,7 +1349,11 @@ def scrape_website_contact(url):
             from playwright.sync_api import sync_playwright
             import time as _time
             with sync_playwright() as pw:
-                browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+                browser = _launch_chromium_resilient(
+                    pw,
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                )
                 ctx = browser.new_context(user_agent=SCRAPE_HEADERS["User-Agent"])
                 pg = ctx.new_page()
                 for page_url in pages[:2]:  # just home + /contact
@@ -1119,38 +1422,6 @@ def scrape_website_contact(url):
     }
 
 
-def _hunter_domain_search(domain):
-    """
-    Silently look up emails for a domain using Hunter.io.
-    Returns the best email found, or "" if nothing found or key not set.
-    """
-    global _hunter_key
-    if not _hunter_key or not domain:
-        return ""
-    # Strip protocol/path — just need the bare domain
-    domain = re.sub(r'^https?://', '', domain).split('/')[0].split('?')[0].strip()
-    if not domain:
-        return ""
-    try:
-        r = requests.get(
-            "https://api.hunter.io/v2/domain-search",
-            params={"domain": domain, "api_key": _hunter_key, "limit": 10},
-            timeout=10,
-        )
-        data = r.json()
-        emails = data.get("data", {}).get("emails", [])
-        if not emails:
-            return ""
-        # Sort by confidence descending, prefer generic/owner type
-        emails.sort(key=lambda e: (
-            1 if e.get("type") in ("generic", "personal") else 0,
-            e.get("confidence", 0)
-        ), reverse=True)
-        return emails[0].get("value", "")
-    except Exception:
-        return ""
-
-
 def get_google_reviews(business_name, city="", state=""):
     """
     Use a headless browser to open Google Maps, click the first result,
@@ -1166,7 +1437,11 @@ def get_google_reviews(business_name, city="", state=""):
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+            browser = _launch_chromium_resilient(
+                pw,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1636,15 +1911,6 @@ def enrich_leads_batch(leads=None):
                 # Pull any phone from website if business_phone still blank
                 if not result.get("business_phone") and ws.get("phones"):
                     result["business_phone"] = ws["phones"][0]
-            except Exception:
-                pass
-
-        # 2b. Hunter.io — fill general_email if still blank
-        if url and not result.get("general_email"):
-            try:
-                hunter_email = _hunter_domain_search(url)
-                if hunter_email:
-                    result["general_email"] = hunter_email
             except Exception:
                 pass
 
@@ -2295,10 +2561,6 @@ def save_config():
         session["perplexity_key"]   = data["perplexity_key"]
     if data.get("perplexity_model"):
         session["perplexity_model"] = data["perplexity_model"]
-    if data.get("hunter_key"):
-        global _hunter_key
-        _hunter_key = data["hunter_key"]
-        session["hunter_key"] = data["hunter_key"]
     if data.get("gmail_address") or data.get("gmail_app_password"):
         # Persist to file so credentials survive server restarts
         _gmail_app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".gmail_app.json")
@@ -2335,9 +2597,6 @@ def chat():
     claude_model     = session.get("claude_model",     "claude-sonnet-4-6")
     gemini_model     = session.get("gemini_model",     "gemini-2.0-flash")
     perplexity_key   = session.get("perplexity_key")   or os.getenv("PERPLEXITY_API_KEY", "")
-    # Restore Hunter key into global so enrichment can use it
-    global _hunter_key
-    _hunter_key = session.get("hunter_key") or os.getenv("HUNTER_API_KEY", "") or _hunter_key
     perplexity_model = session.get("perplexity_model", "sonar-pro")
 
     def stream():
@@ -2658,6 +2917,6 @@ def api_profile():
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.DEBUG)
-    port = int(os.environ.get("PORT", 8502))
+    port = int(os.environ.get("PORT", 8504))
     debug = os.environ.get("RAILWAY_ENVIRONMENT") is None  # debug only locally
     app.run(port=port, debug=debug, use_reloader=debug)

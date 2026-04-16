@@ -8,6 +8,6 @@ RUN playwright install chromium
 
 COPY . .
 
-EXPOSE 8502
+EXPOSE 8504
 
 CMD gunicorn flask_app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 4
