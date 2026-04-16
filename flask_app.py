@@ -1,9 +1,12 @@
 import os
 import re
+import sys
 import json
 import csv
 import io
 import base64
+import subprocess
+import threading
 import email as email_lib
 import email.mime.text
 from datetime import datetime
@@ -51,6 +54,45 @@ def _load_local_env():
 
 
 _load_local_env()
+
+_PLAYWRIGHT_INSTALL_LOCK = threading.Lock()
+_PLAYWRIGHT_CHROMIUM_READY = False
+
+
+def _is_missing_playwright_browser_error(exc):
+    msg = str(exc)
+    return (
+        "BrowserType.launch" in msg
+        and "Executable doesn't exist" in msg
+    )
+
+
+def _ensure_playwright_chromium():
+    global _PLAYWRIGHT_CHROMIUM_READY
+    if _PLAYWRIGHT_CHROMIUM_READY:
+        return
+    with _PLAYWRIGHT_INSTALL_LOCK:
+        if _PLAYWRIGHT_CHROMIUM_READY:
+            return
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=600,
+        )
+        _PLAYWRIGHT_CHROMIUM_READY = True
+
+
+def _launch_chromium_resilient(playwright_obj, **kwargs):
+    try:
+        return playwright_obj.chromium.launch(**kwargs)
+    except Exception as exc:
+        if not _is_missing_playwright_browser_error(exc):
+            raise
+        _ensure_playwright_chromium()
+        return playwright_obj.chromium.launch(**kwargs)
 
 import requests
 from flask import Flask, request, session, Response, send_file, jsonify, render_template
@@ -538,7 +580,11 @@ def search_businesses_maps(keyword, location, num_results=10):
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+            browser = _launch_chromium_resilient(
+                pw,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1060,7 +1106,11 @@ def sunbiz_lookup(business_name):
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+            browser = _launch_chromium_resilient(
+                pw,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1299,7 +1349,11 @@ def scrape_website_contact(url):
             from playwright.sync_api import sync_playwright
             import time as _time
             with sync_playwright() as pw:
-                browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+                browser = _launch_chromium_resilient(
+                    pw,
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                )
                 ctx = browser.new_context(user_agent=SCRAPE_HEADERS["User-Agent"])
                 pg = ctx.new_page()
                 for page_url in pages[:2]:  # just home + /contact
@@ -1383,7 +1437,11 @@ def get_google_reviews(business_name, city="", state=""):
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+            browser = _launch_chromium_resilient(
+                pw,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
