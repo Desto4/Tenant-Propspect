@@ -944,6 +944,18 @@ function selectModel(modelId, labelEl, provider) {
     toast(`Model updated — ${modelId}`);
 }
 
+async function setActiveProvider(provider) {
+    await fetch('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ model_provider: provider }),
+    });
+    const labels = { anthropic: 'Claude (Anthropic)', gemini: 'Gemini', perplexity: 'Perplexity' };
+    toast(`Chat provider switched to ${labels[provider] || provider}`);
+    // Refresh the connectors grid so active pills + buttons update
+    loadConnectors();
+}
+
 function toggleAgentDropdown() {
     document.getElementById('agent-dropdown').classList.toggle('hidden');
 }
@@ -2133,13 +2145,36 @@ async function loadConnectors() {
                     </div>
                 </div>` : '';
 
-            const actionBtn = c.action === 'coming_soon'
+            // "Use as chat provider" button — only for AI provider cards
+            const isActiveProvider = c.provider && (config.model_provider === c.provider);
+            const providerBtn = c.provider && c.configured
+                ? `<div class="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-gray-700">Chat provider</p>
+                        <p class="text-[11px] text-gray-400 mt-0.5">${isActiveProvider ? 'Currently driving the agent' : 'Click to use this AI for chat'}</p>
+                    </div>
+                    <button onclick="setActiveProvider('${c.provider}'); event.stopPropagation()"
+                        class="provider-toggle-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isActiveProvider
+                            ? 'bg-teal-500 text-white cursor-default'
+                            : 'bg-gray-100 text-gray-600 hover:bg-teal-50 hover:text-teal-700 border border-gray-200'
+                        }">
+                        ${isActiveProvider ? '✓ Active' : 'Set active'}
+                    </button>
+                   </div>`
+                : c.action === 'coming_soon'
                 ? ''
                 : `<div class="mt-4 pt-4 border-t border-gray-100">
                     <button onclick="toggleSettings(); event.stopPropagation()" class="text-xs text-teal-600 hover:text-teal-800 font-medium flex items-center gap-1">
                         Configure <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
                     </button>
                    </div>`;
+
+            // Show "Active" pill in card header for the currently selected provider
+            const activePill = isActiveProvider
+                ? `<span class="flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-100 border border-teal-200 px-2 py-0.5 rounded-full">
+                       <i class="fa-solid fa-circle text-[6px] text-teal-500"></i> Active
+                   </span>`
+                : '';
 
             return `
             <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm transition-shadow connector-card" data-key="${c.key}">
@@ -2150,7 +2185,10 @@ async function loadConnectors() {
                             <i class="${c.icon} ${c.color} text-xl"></i>
                         </div>
                         <div>
-                            <div class="font-semibold text-gray-900 text-sm">${c.name}</div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-gray-900 text-sm">${c.name}</span>
+                                ${activePill}
+                            </div>
                             <div class="text-xs text-gray-400 mt-0.5">${c.subtitle}</div>
                         </div>
                     </div>
@@ -2163,7 +2201,7 @@ async function loadConnectors() {
                 <div class="connector-body hidden">
                     ${capabilitiesHtml}
                     ${modelsHtml}
-                    ${actionBtn}
+                    ${providerBtn}
                 </div>
             </div>`;
         }).join('');
