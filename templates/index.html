@@ -672,10 +672,10 @@
                                 class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
                             <select id="input-perplexity-model"
                                 class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white">
+                                <option value="sonar-deep-research">sonar-deep-research (reports)</option>
                                 <option value="sonar-pro">sonar-pro (best)</option>
                                 <option value="sonar">sonar</option>
                                 <option value="sonar-reasoning-pro">sonar-reasoning-pro</option>
-                                <option value="sonar-reasoning">sonar-reasoning</option>
                             </select>
                             <p class="text-xs text-gray-400">Get a key at <a href="https://www.perplexity.ai/settings/api" target="_blank" class="text-teal-500 underline">perplexity.ai/settings/api</a></p>
                         </div>
@@ -2058,7 +2058,6 @@ async function loadConnectors() {
                     { id: 'sonar-pro',            label: 'Sonar Pro',            tag: 'Best',        tagColor: 'bg-teal-50 text-teal-600',      desc: 'Highest quality web-grounded answers' },
                     { id: 'sonar',                label: 'Sonar',                tag: 'Fastest',     tagColor: 'bg-blue-50 text-blue-600',      desc: 'Fast, lower cost' },
                     { id: 'sonar-reasoning-pro',  label: 'Sonar Reasoning Pro',  tag: 'Deep',        tagColor: 'bg-purple-50 text-purple-600',  desc: 'Best for complex multi-step research' },
-                    { id: 'sonar-reasoning',      label: 'Sonar Reasoning',      tag: 'Balanced',    tagColor: 'bg-gray-100 text-gray-600',     desc: 'Reasoning with quicker responses' },
                 ],
             },
             {

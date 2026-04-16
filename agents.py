@@ -1,6 +1,7 @@
 """Agent loops for Anthropic, Gemini, and Perplexity providers."""
 import json
 import os
+import re
 import time as _time
 
 import anthropic
@@ -93,6 +94,14 @@ def _hs_start_leads():
         for l in get_leads()
         if l.get("owner_email") or l.get("general_email")
     ]
+
+
+# ── Response cleanup ──────────────────────────────────────────────────────────
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove provider-internal <think>...</think> blocks from visible output."""
+    cleaned = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned.strip()
 
 
 # ── OpenAI-compatible loop (Gemini / future providers) ────────────────────────
@@ -311,7 +320,7 @@ def run_agent_perplexity(user_message, history, perplexity_key, model, apollo_ke
         if usage:
             input_tokens  = getattr(usage, "prompt_tokens",     0) or 0
             output_tokens = getattr(usage, "completion_tokens", 0) or 0
-        text = response.choices[0].message.content or ""
+        text = _strip_think_blocks(response.choices[0].message.content or "")
         if text:
             yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
         success = True
