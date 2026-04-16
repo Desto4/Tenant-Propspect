@@ -915,7 +915,8 @@ function toggleConnector(key) {
     });
 }
 
-function selectModel(modelId, labelEl) {
+function selectModel(modelId, labelEl, provider) {
+    provider = provider || 'anthropic';
     const container = labelEl.closest('.space-y-2');
     container.querySelectorAll('label').forEach(l => {
         l.classList.remove('border-teal-300', 'bg-teal-50/50');
@@ -931,9 +932,16 @@ function selectModel(modelId, labelEl) {
     dot.classList.add('border-teal-500');
     dot.classList.remove('border-gray-300');
     dot.innerHTML = '<div class="w-2 h-2 rounded-full bg-teal-500"></div>';
-    // Save to config
-    fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ claude_model: modelId, model_provider: 'anthropic' }) });
-    toast('Model updated');
+    // Field name to update per provider
+    const fieldMap = {
+        anthropic:  'claude_model',
+        perplexity: 'perplexity_model',
+        gemini:     'gemini_model',
+    };
+    const payload = { model_provider: provider };
+    payload[fieldMap[provider] || 'claude_model'] = modelId;
+    fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    toast(`Model updated — ${modelId}`);
 }
 
 function toggleAgentDropdown() {
@@ -2007,15 +2015,37 @@ async function loadConnectors() {
         const connectors = [
             {
                 key: 'anthropic', name: 'Anthropic',
+                provider: 'anthropic',
                 iconImg: 'https://upload.wikimedia.org/wikipedia/commons/7/78/Anthropic_logo.svg',
                 icon: 'fa-solid fa-robot', color: 'text-purple-600', iconBg: 'bg-gray-900',
                 subtitle: 'Powering agent reasoning · Claude',
                 configured: config.anthropic, action: 'settings',
+                activeModel: config.claude_model || 'claude-sonnet-4-6',
                 capabilities: ['Powers all agent reasoning and decision-making','Natural language understanding and generation','Research synthesis and report generation','Email drafting, calendar coordination, and communication'],
                 models: [
                     { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tag: 'Most capable', tagColor: 'bg-gray-100 text-gray-600', desc: 'Most powerful, best for complex reasoning' },
                     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tag: 'Recommended', tagColor: 'bg-teal-50 text-teal-600', desc: 'Best balance of speed and intelligence' },
                     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tag: 'Fastest', tagColor: 'bg-blue-50 text-blue-600', desc: 'Fastest responses, great for simple tasks' },
+                ],
+            },
+            {
+                key: 'perplexity', name: 'Perplexity',
+                provider: 'perplexity',
+                icon: 'fa-solid fa-magnifying-glass-chart', color: 'text-teal-600', iconBg: 'bg-teal-50',
+                subtitle: 'Live web search across Yelp, Reddit, Google & more',
+                configured: config.perplexity, action: 'settings',
+                activeModel: config.perplexity_model || 'sonar-pro',
+                capabilities: [
+                    'Finds businesses across Yelp, Reddit, Google and local directories in one call',
+                    'Bypasses bot detection by running searches on Perplexity\'s infrastructure',
+                    'Used as a source inside find_best_leads for richer multi-source ranking',
+                    'Can also be used as a standalone chat provider'
+                ],
+                models: [
+                    { id: 'sonar-pro',            label: 'Sonar Pro',            tag: 'Best',        tagColor: 'bg-teal-50 text-teal-600',      desc: 'Highest quality web-grounded answers' },
+                    { id: 'sonar',                label: 'Sonar',                tag: 'Fastest',     tagColor: 'bg-blue-50 text-blue-600',      desc: 'Fast, lower cost' },
+                    { id: 'sonar-reasoning-pro',  label: 'Sonar Reasoning Pro',  tag: 'Deep',        tagColor: 'bg-purple-50 text-purple-600',  desc: 'Best for complex multi-step research' },
+                    { id: 'sonar-reasoning',      label: 'Sonar Reasoning',      tag: 'Balanced',    tagColor: 'bg-gray-100 text-gray-600',     desc: 'Reasoning with quicker responses' },
                 ],
             },
             {
@@ -2062,9 +2092,9 @@ async function loadConnectors() {
             },
         ];
 
-        const activeModel = '${session.get("claude_model", "claude-sonnet-4-6") if False else "claude-sonnet-4-6"}';
-
         grid.innerHTML = connectors.map(c => {
+            const activeModel = c.activeModel || '';
+            const providerArg = c.provider || 'anthropic';
             const statusBadge = c.configured
                 ? `<span class="flex items-center gap-1.5 text-xs font-medium text-teal-600 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block"></span> Connected</span>`
                 : c.action === 'coming_soon'
@@ -2088,9 +2118,9 @@ async function loadConnectors() {
                     <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Active Model</p>
                     <div class="space-y-2">
                         ${c.models.map(m => `
-                        <label class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${m.id === 'claude-sonnet-4-6' ? 'border-teal-300 bg-teal-50/50' : 'border-gray-200 hover:border-gray-300'}" onclick="selectModel('${m.id}', this); event.stopPropagation()">
-                            <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${m.id === 'claude-sonnet-4-6' ? 'border-teal-500' : 'border-gray-300'}">
-                                ${m.id === 'claude-sonnet-4-6' ? '<div class="w-2 h-2 rounded-full bg-teal-500"></div>' : ''}
+                        <label class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${m.id === activeModel ? 'border-teal-300 bg-teal-50/50' : 'border-gray-200 hover:border-gray-300'}" onclick="selectModel('${m.id}', this, '${providerArg}'); event.stopPropagation()">
+                            <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${m.id === activeModel ? 'border-teal-500' : 'border-gray-300'}">
+                                ${m.id === activeModel ? '<div class="w-2 h-2 rounded-full bg-teal-500"></div>' : ''}
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2">
