@@ -2,8 +2,8 @@
 
 echo "🚀 Starting MMG Agent (Flask)..."
 
-# Install / update Python dependencies
-pip3 install -q flask anthropic requests playwright openai
+# Install / update Python dependencies from the project manifest
+pip3 install -q -r requirements.txt
 
 # Ensure Playwright's Chromium browser is installed (needed for Sunbiz + Google Maps)
 python3 -m playwright install chromium --quiet 2>/dev/null || true

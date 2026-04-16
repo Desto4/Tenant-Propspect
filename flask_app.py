@@ -9,13 +9,48 @@ import email.mime.text
 from datetime import datetime
 from urllib.parse import quote_plus, urljoin, urlparse
 
-# Load .env file if present (so keys don't need to be entered in the UI)
-try:
-    from dotenv import load_dotenv
-    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    load_dotenv(_env_path, override=True)
-except ImportError:
-    pass
+
+def _strip_env_quotes(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def _load_local_env():
+    """Load .env from the repo root even if python-dotenv is unavailable."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_path):
+        return
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(env_path, override=True)
+        return
+    except ImportError:
+        pass
+
+    # Minimal fallback parser for simple KEY=VALUE .env files.
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if not key:
+                    continue
+                os.environ[key] = _strip_env_quotes(value)
+    except Exception:
+        pass
+
+
+_load_local_env()
 
 import requests
 from flask import Flask, request, session, Response, send_file, jsonify, render_template
