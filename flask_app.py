@@ -845,8 +845,9 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
 
     def _apollo_enrich_people(selected_people):
         enriched = {}
+        enrich_errors = []
         if not selected_people:
-            return enriched
+            return enriched, enrich_errors
 
         for start in range(0, len(selected_people), 10):
             chunk = selected_people[start:start + 10]
@@ -864,6 +865,9 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
                 enrich_data = enrich_resp.json()
                 matches = enrich_data.get("matches") or []
                 if enrich_resp.status_code >= 400:
+                    enrich_errors.append(
+                        f"Apollo enrichment failed (HTTP {enrich_resp.status_code}): {enrich_data}"
+                    )
                     continue
                 for match in matches:
                     if not isinstance(match, dict):
@@ -871,14 +875,15 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
                     pid = str(match.get("id") or "").strip()
                     if pid:
                         enriched[pid] = match
-            except Exception:
+            except Exception as exc:
+                enrich_errors.append(f"Apollo enrichment failed: {exc}")
                 continue
-        return enriched
+        return enriched, enrich_errors
 
     def _fetch_apollo_people(orgs):
         org_ids = [_org_id(org) for org in orgs if _org_id(org)]
         if not org_ids:
-            return {}
+            return {}, []
 
         params = [
             ("page", "1"),
@@ -907,7 +912,7 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             people_data = people_resp.json()
             people = people_data.get("people") or []
             if people_resp.status_code >= 400 or not isinstance(people, list):
-                return {}
+                return {}, [f"Apollo people search failed (HTTP {people_resp.status_code}): {people_data}"]
 
             grouped = {}
             for person in people:
@@ -922,7 +927,7 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             for org_id, candidates in grouped.items():
                 selected[org_id] = max(candidates, key=_person_rank)
 
-            enriched = _apollo_enrich_people([
+            enriched, enrich_errors = _apollo_enrich_people([
                 (str(person.get("id") or "").strip(), person)
                 for person in selected.values()
             ])
@@ -931,9 +936,9 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
                 pid = str(person.get("id") or "").strip()
                 if pid and pid in enriched:
                     selected[org_id] = {**person, **enriched[pid]}
-            return selected
-        except Exception:
-            return {}
+            return selected, enrich_errors
+        except Exception as exc:
+            return {}, [f"Apollo people search failed: {exc}"]
 
     try:
         r = requests.post(
@@ -947,7 +952,14 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             return {"error": f"Apollo error (HTTP {r.status_code}): {data}"}
 
         organizations = data["organizations"]
-        people_by_org = _fetch_apollo_people(organizations)
+        people_by_org, apollo_errors = _fetch_apollo_people(organizations)
+        if apollo_errors:
+            return {
+                "error": (
+                    "Apollo found organizations, but contact email reveal failed. "
+                    + " ".join(apollo_errors)
+                )
+            }
 
         leads = []
         for org in organizations:
@@ -1010,9 +1022,18 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             }
             leads.append(lead)
 
-        _leads_store = leads
-        _save_leads_to_file(leads)
-        return {"leads": leads, "total": len(leads)}
+        leads_with_email = [lead for lead in leads if lead.get("owner_email")]
+        if not leads_with_email:
+            return {
+                "error": (
+                    "Apollo search returned organizations, but no contact emails were revealed. "
+                    "Make sure the connected Apollo key has people enrichment/email reveal access."
+                )
+            }
+
+        _leads_store = leads_with_email
+        _save_leads_to_file(leads_with_email)
+        return {"leads": leads_with_email, "total": len(leads_with_email)}
     except Exception as e:
         return {"error": str(e)}
 
