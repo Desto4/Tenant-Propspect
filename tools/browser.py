@@ -1,4 +1,5 @@
 """Playwright-backed browser tools: Google Maps search, Sunbiz, website scrape, Google reviews."""
+import html
 import re
 import requests
 from datetime import datetime
@@ -18,6 +19,76 @@ SCRAPE_HEADERS = {
     "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+
+def _sunbiz_unescape(text: str) -> str:
+    """Decode HTML entities in scraped Sunbiz text so .title() does not produce &Amp; artifacts."""
+    if not text:
+        return ""
+    return html.unescape(text).replace("\xa0", " ").strip()
+
+
+def _sunbiz_section_lines(title: str, html_body: str) -> list:
+    """Extract visible lines from a Sunbiz detailSection; title may use & or &amp; in the page."""
+    for t in (title, title.replace("&", "&amp;")):
+        m = re.search(
+            rf"<span>\s*{re.escape(t)}\s*</span>(.*?)(?=<div[^>]*class=\"detailSection|$)",
+            html_body, re.DOTALL | re.IGNORECASE,
+        )
+        if m:
+            chunk = m.group(1)
+            chunk = re.sub(r"<br\s*/?>", "\n", chunk)
+            chunk = re.sub(r"<[^>]+>", "", chunk)
+            chunk = _sunbiz_unescape(chunk)
+            return [ln.strip() for ln in chunk.splitlines() if ln.strip()]
+    return []
+
+
+def _sunbiz_officer_name(off_lines: list) -> str:
+    """Pick officer/owner name from Sunbiz Officer/Director block; avoids header junk like 'Name & Address'."""
+    if not off_lines:
+        return ""
+
+    def _is_header_junk(line: str) -> bool:
+        u = line.lower()
+        if "registered agent" in u and "address" in u:
+            return True
+        if re.match(r"^name\s*&\s*address\s*$", u):
+            return True
+        if u in ("officer/director detail", "officer director detail"):
+            return True
+        return False
+
+    lines = []
+    for raw in off_lines:
+        ln = _sunbiz_unescape(raw)
+        if not ln or _is_header_junk(ln):
+            continue
+        lines.append(ln)
+
+    # Preferred: "Title …" line then ALL-CAPS style name on the next line (matches Sunbiz layout)
+    for i, line in enumerate(lines):
+        if line.lower().startswith("title") and i + 1 < len(lines):
+            candidate = lines[i + 1]
+            if re.match(r"[A-Z][A-Z0-9 ,.'\-]+$", candidate):
+                return candidate.title()
+
+    # Fallback: role keyword — name is usually on the previous line
+    for i, line in enumerate(lines):
+        if re.search(
+            r"\b(president|owner|principal|ceo|managing member|director|founder|manager|member|treasurer|secretary|vp)\b",
+            line, re.IGNORECASE,
+        ):
+            if i > 0:
+                candidate = lines[i - 1]
+                if not _is_header_junk(candidate) and len(candidate) > 2:
+                    return candidate.title()
+            break
+
+    # Last resort: first non-junk line
+    if lines:
+        return lines[0].title()
+    return ""
 
 
 def search_businesses_maps(keyword: str, location: str, num_results: int = 10) -> dict:
@@ -233,14 +304,14 @@ def sunbiz_lookup(business_name: str) -> dict:
             r'<div[^>]*class="[^"]*corporationName[^"]*"[^>]*>.*?<p>([^<]+)</p>\s*<p>([^<]+)</p>',
             html, re.DOTALL,
         )
-        entity_type = corp_m.group(1).strip() if corp_m else ""
-        entity_name = corp_m.group(2).strip().replace("&amp;", "&") if corp_m else ""
+        entity_type = _sunbiz_unescape(corp_m.group(1).strip()) if corp_m else ""
+        entity_name = _sunbiz_unescape(corp_m.group(2).strip()) if corp_m else ""
 
         filing = {}
         for label, value in re.findall(
             r'<label[^>]*>\s*([^<]+?)\s*</label>\s*<span>\s*([^<]*?)\s*</span>', html
         ):
-            filing[label.strip()] = value.strip()
+            filing[_sunbiz_unescape(label.strip())] = _sunbiz_unescape(value.strip())
 
         date_filed    = filing.get("Date Filed", "")
         status        = filing.get("Status", "")
@@ -253,30 +324,12 @@ def sunbiz_lookup(business_name: str) -> dict:
             except Exception:
                 pass
 
-        def _section_text(title, html_body):
-            m = re.search(
-                rf"<span>\s*{re.escape(title)}\s*</span>(.*?)(?=<div[^>]*class=\"detailSection|$)",
-                html_body, re.DOTALL | re.IGNORECASE,
-            )
-            if not m:
-                return []
-            chunk = re.sub(r"<br\s*/?>", "\n", m.group(1))
-            chunk = re.sub(r"<[^>]+>", "", chunk)
-            return [ln.strip() for ln in chunk.splitlines() if ln.strip()]
-
-        ra_lines = _section_text("Registered Agent Name & Address", html)
+        ra_lines = _sunbiz_section_lines("Registered Agent Name & Address", html)
         registered_agent  = ra_lines[0] if ra_lines else ""
         reg_agent_address = ", ".join(ra_lines[1:4]) if len(ra_lines) > 1 else ""
 
-        off_lines = _section_text("Officer/Director Detail", html)
-        owner_name = ""
-        for i, line in enumerate(off_lines):
-            if re.search(r'\b(president|owner|principal|ceo|managing member|director|founder)\b', line, re.IGNORECASE):
-                if i > 0:
-                    owner_name = off_lines[i - 1].title()
-                break
-        if not owner_name and off_lines:
-            owner_name = off_lines[0].title()
+        off_lines = _sunbiz_section_lines("Officer/Director Detail", html)
+        owner_name = _sunbiz_officer_name(off_lines)
 
         sunbiz_url = detail_url
         return {
