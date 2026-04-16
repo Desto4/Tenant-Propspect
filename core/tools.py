@@ -4,6 +4,7 @@ from tools.browser  import (
     search_businesses_yelp, search_reddit,
 )
 from tools.multi_source import find_best_leads
+from tools.perplexity_search import search_businesses_perplexity
 from tools.search   import web_search
 from tools.apollo   import apollo_search_people
 from tools.leads    import enrich_leads_batch, research_company, get_collected_leads, save_leads_csv, save_outreach_csv
@@ -14,11 +15,11 @@ TOOLS = [
     {
         "name": "find_best_leads",
         "description": (
-            "PRIMARY multi-source lead discovery. Pulls from Google Maps, Yelp, and Reddit "
-            "in parallel, merges businesses that appear on multiple sources, scores each one "
-            "by quality signals (cross-source presence, Google rating × review count, "
-            "Yelp rating × review count, Reddit mentions, data completeness), and returns "
-            "the top N ranked leads. "
+            "PRIMARY multi-source lead discovery. Pulls from Google Maps, Yelp, Perplexity "
+            "(live web search across all public sources), and Reddit in parallel, merges "
+            "businesses that appear on multiple sources, scores each one by quality signals "
+            "(cross-source presence, Google rating × review count, Yelp rating × review count, "
+            "Reddit mentions, data completeness), and returns the top N ranked leads. "
             "Use this as the DEFAULT when the user asks to find leads, find businesses, "
             "or find the best prospects — it produces better results than any single source alone. "
             "After calling this, call enrich_leads_batch in your NEXT tool call to fill in "
@@ -33,7 +34,7 @@ TOOLS = [
                 "sources": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional list of sources to query. Default: ['maps', 'yelp', 'reddit']",
+                    "description": "Optional list of sources to query. Default: ['maps', 'yelp', 'reddit', 'perplexity']",
                 },
             },
             "required": ["keyword", "location"],
@@ -212,6 +213,24 @@ TOOLS = [
         },
     },
     {
+        "name": "search_businesses_perplexity",
+        "description": (
+            "Use Perplexity's live web search to find businesses across Yelp, Reddit, Google, "
+            "local directories, and any other public source — all in one call. "
+            "Returns leads with name, address, phone, website, ratings from multiple platforms. "
+            "Use when the user asks to search via Perplexity, or when other sources are unavailable."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keyword":     {"type": "string", "description": "Business type, e.g. 'nail salon'"},
+                "location":    {"type": "string", "description": "City and state, e.g. 'Miami, FL'"},
+                "num_results": {"type": "integer", "description": "Number of results (default 10)", "default": 10},
+            },
+            "required": ["keyword", "location"],
+        },
+    },
+    {
         "name": "search_businesses_yelp",
         "description": (
             "Search Yelp for businesses by keyword and location using a headless browser. "
@@ -283,7 +302,8 @@ TOOL_MAP = {
     "sunbiz_lookup":           sunbiz_lookup,
     "scrape_website_contact":  scrape_website_contact,
     "get_google_reviews":      get_google_reviews,
-    "search_businesses_yelp":  search_businesses_yelp,
+    "search_businesses_perplexity": search_businesses_perplexity,
+    "search_businesses_yelp":       search_businesses_yelp,
     "search_reddit":           search_reddit,
     "hubspot_create_contact": hubspot_create_contact,
     "save_leads_csv":         save_leads_csv,

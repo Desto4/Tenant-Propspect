@@ -155,19 +155,21 @@ def find_best_leads(
         keyword:     business type (e.g. 'nail salon')
         location:    city + state (e.g. 'Miami, FL')
         num_results: how many top-ranked leads to return (default 10)
-        sources:     optional list of sources to include; default ['maps', 'yelp', 'reddit']
+        sources:     optional list of sources to include;
+                     default ['maps', 'yelp', 'reddit', 'perplexity']
 
     Returns:
         {
             "leads":   [...ranked leads with 'sources' and 'quality_score'...],
             "total":   N,
-            "breakdown": {"maps": int, "yelp": int, "reddit_mentions": int},
+            "breakdown": {"maps": int, "yelp": int, "perplexity": int, "reddit_mentions": int},
             "warnings": [str, ...],
         }
     """
     from tools.browser import search_businesses_maps, search_businesses_yelp, search_reddit
+    from tools.perplexity_search import search_businesses_perplexity
 
-    sources  = sources or ["maps", "yelp", "reddit"]
+    sources  = sources or ["maps", "yelp", "reddit", "perplexity"]
     warnings = []
 
     # Pull a wider net than num_results so ranking has room to pick winners.
@@ -175,11 +177,15 @@ def find_best_leads(
 
     # ── 1. Fan out to all sources in parallel ────────────────────────────────
     tasks = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
         if "maps" in sources:
             tasks["maps"] = ex.submit(search_businesses_maps, keyword, location, fetch_n)
         if "yelp" in sources:
             tasks["yelp"] = ex.submit(search_businesses_yelp, keyword, location, fetch_n)
+        if "perplexity" in sources:
+            tasks["perplexity"] = ex.submit(
+                search_businesses_perplexity, keyword, location, fetch_n
+            )
         if "reddit" in sources:
             # Reddit query combines keyword + location for local intelligence
             tasks["reddit"] = ex.submit(
@@ -191,9 +197,11 @@ def find_best_leads(
 
         results = {name: future.result() for name, future in tasks.items()}
 
-    # ── 2. Collect business-style leads (maps + yelp) ─────────────────────────
-    maps_leads = []
-    yelp_leads = []
+    # ── 2. Collect business-style leads (maps + yelp + perplexity) ───────────
+    maps_leads       = []
+    yelp_leads       = []
+    perplexity_leads = []
+
     if "maps" in results:
         mr = results["maps"]
         if isinstance(mr, dict):
@@ -202,6 +210,7 @@ def find_best_leads(
             for lead in mr.get("leads", []):
                 lead["source"] = "maps"
                 maps_leads.append(lead)
+
     if "yelp" in results:
         yr = results["yelp"]
         if isinstance(yr, dict):
@@ -210,6 +219,15 @@ def find_best_leads(
             for lead in yr.get("leads", []):
                 lead["source"] = "yelp"
                 yelp_leads.append(lead)
+
+    if "perplexity" in results:
+        pr = results["perplexity"]
+        if isinstance(pr, dict):
+            if pr.get("warning"):  warnings.append(f"Perplexity: {pr['warning']}")
+            if pr.get("error"):    warnings.append(f"Perplexity error: {pr['error']}")
+            for lead in pr.get("leads", []):
+                lead["source"] = "perplexity"
+                perplexity_leads.append(lead)
 
     # ── 3. Reddit: used as a signal layer, not leads ─────────────────────────
     reddit_posts = []
@@ -220,7 +238,7 @@ def find_best_leads(
             if rr.get("error"):    warnings.append(f"Reddit error: {rr['error']}")
             reddit_posts = rr.get("posts", []) or []
 
-    # ── 4. Merge duplicates across Maps + Yelp ───────────────────────────────
+    # ── 4. Merge duplicates across all business sources ───────────────────────
     # Index by normalised name; fall back to phone digits for extra matching
     merged = {}
 
@@ -233,7 +251,7 @@ def find_best_leads(
     # same phone merges correctly
     phone_to_key = {}
 
-    for lead in maps_leads + yelp_leads:
+    for lead in maps_leads + yelp_leads + perplexity_leads:
         k = _key(lead)
         if not k:
             continue
@@ -275,6 +293,7 @@ def find_best_leads(
         "breakdown": {
             "maps":            len(maps_leads),
             "yelp":            len(yelp_leads),
+            "perplexity":      len(perplexity_leads),
             "reddit_mentions": reddit_total_hits,
             "merged_unique":   len(merged),
         },
