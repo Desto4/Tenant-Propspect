@@ -16,6 +16,8 @@ import re
 
 from core.state import set_leads
 
+from tools.leads import enrich_leads_sunbiz_only
+
 
 # ── Normalization / dedup helpers ─────────────────────────────────────────────
 
@@ -111,6 +113,23 @@ def _score_lead(lead: dict, reddit_mentions: dict) -> int:
     return min(score, 100)
 
 
+def _location_looks_florida(location: str) -> bool:
+    """Heuristic: Florida Sunbiz only applies to FL businesses."""
+    if not (location or "").strip():
+        return False
+    s = location.upper()
+    if re.search(r"\bFL\b", s) or "FLORIDA" in s:
+        return True
+    # Common FL metros / counties without explicit state in the query
+    hints = (
+        "MIAMI", "DADE", "BROWARD", "PALM BEACH", "FORT LAUDERDALE", "WEST PALM",
+        "ORLANDO", "TAMPA", "ST. PETERSBURG", "JACKSONVILLE", "SARASOTA",
+        "NAPLES", "FORT MYERS", "KEY WEST", "GAINESVILLE", "TALLAHASSEE",
+        "CLEARWATER", "HOLLYWOOD FL", "CORAL GABLES", "HIALEAH",
+    )
+    return any(h in s for h in hints)
+
+
 def _build_reddit_mention_map(posts: list, candidate_names: list) -> dict:
     """Count how many Reddit posts mention each business by normalised name."""
     if not posts or not candidate_names:
@@ -147,6 +166,7 @@ def find_best_leads(
     location: str,
     num_results: int = 10,
     sources: list = None,
+    enrich_sunbiz: bool = True,
 ) -> dict:
     """
     Search across multiple sources, merge duplicates, rank by quality, return the top N.
@@ -157,6 +177,9 @@ def find_best_leads(
         num_results: how many top-ranked leads to return (default 10)
         sources:     optional list of sources to include;
                      default ['maps', 'yelp', 'reddit', 'perplexity']
+        enrich_sunbiz: when True and the location looks like Florida, run Florida
+                     Division of Corporations (Sunbiz) lookup on each ranked lead
+                     so entity status and officers are filled before enrichment.
 
     Returns:
         {
@@ -284,7 +307,24 @@ def find_best_leads(
     ranked.sort(key=lambda l: l.get("quality_score", 0), reverse=True)
     top = ranked[:num_results]
 
-    # ── 7. Store for downstream enrichment ───────────────────────────────────
+    # ── 7. Florida Sunbiz (entity registry) — part of discovery, not a separate step ──
+    if enrich_sunbiz and _location_looks_florida(location) and top:
+        try:
+            top = enrich_leads_sunbiz_only(top)
+            n_sb = sum(1 for l in top if (l.get("sunbiz_url") or "").strip())
+            if n_sb:
+                warnings.append(
+                    f"Sunbiz: Florida registry data merged for {n_sb} of {len(top)} ranked lead(s)."
+                )
+            else:
+                warnings.append(
+                    "Sunbiz: no registry matches returned for these trade names "
+                    "(names may differ from legal entity names, or lookups were blocked)."
+                )
+        except Exception as e:
+            warnings.append(f"Sunbiz enrichment error: {e}")
+
+    # ── 8. Store for downstream enrichment ───────────────────────────────────
     set_leads(top)
 
     return {
@@ -296,6 +336,7 @@ def find_best_leads(
             "perplexity":      len(perplexity_leads),
             "reddit_mentions": reddit_total_hits,
             "merged_unique":   len(merged),
+            "sunbiz_enriched": sum(1 for l in top if (l.get("sunbiz_url") or "").strip()),
         },
         "warnings": warnings,
     }

@@ -20,6 +20,47 @@ LEAD_FIELDS = [
 ]
 
 
+def _apply_sunbiz_lookup(result: dict, trade_name: str) -> dict:
+    """Florida Sunbiz enrichment. Skips if this lead already has a Sunbiz URL (e.g. from find_best_leads)."""
+    from tools.browser import sunbiz_lookup
+
+    if result.get("sunbiz_url"):
+        return result
+    name = (trade_name or "").strip()
+    if not name:
+        return result
+    try:
+        sb = sunbiz_lookup(name)
+        if sb.get("found"):
+            result["entity_name"]       = sb.get("entity_name", "")
+            result["formation_date"]    = sb.get("date_filed", "")
+            result["years_in_business"] = sb.get("years_in_business", "")
+            result["sunbiz_status"]     = sb.get("sunbiz_status", "")
+            result["sunbiz_url"]        = sb.get("sunbiz_url", "")
+            result["registered_agent"]  = sb.get("registered_agent", "")
+            result["reg_agent_address"] = sb.get("reg_agent_address", "")
+            if sb.get("owner_name") and not result.get("owner_name"):
+                result["owner_name"] = sb.get("owner_name", "")
+    except Exception:
+        pass
+    return result
+
+
+def enrich_leads_sunbiz_only(leads: list) -> list:
+    """Apply only Florida Sunbiz lookup to each lead (order preserved). Used after multi-source discovery."""
+    if not leads:
+        return []
+
+    def _one(lead):
+        result = dict(lead)
+        for f in LEAD_FIELDS:
+            result.setdefault(f, "")
+        return _apply_sunbiz_lookup(result, result.get("trade_name", ""))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        return list(executor.map(_one, leads))
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _save_leads_to_file(leads: list) -> None:
@@ -182,7 +223,7 @@ def save_outreach_csv(drafts: list) -> dict:
 
 def enrich_leads_batch(leads=None) -> dict:
     """Enrich every lead in parallel with Sunbiz, website, Google reviews, and web-search contacts."""
-    from tools.browser import sunbiz_lookup, scrape_website_contact, get_google_reviews
+    from tools.browser import scrape_website_contact, get_google_reviews
 
     if not leads:
         leads = list(get_leads())
@@ -199,20 +240,7 @@ def enrich_leads_batch(leads=None) -> dict:
         city  = result.get("city", "")
         state = result.get("state", "")
 
-        try:
-            sb = sunbiz_lookup(name)
-            if sb.get("found"):
-                result["entity_name"]       = sb.get("entity_name", "")
-                result["formation_date"]    = sb.get("date_filed", "")
-                result["years_in_business"] = sb.get("years_in_business", "")
-                result["sunbiz_status"]     = sb.get("sunbiz_status", "")
-                result["sunbiz_url"]        = sb.get("sunbiz_url", "")
-                result["registered_agent"]  = sb.get("registered_agent", "")
-                result["reg_agent_address"] = sb.get("reg_agent_address", "")
-                if sb.get("owner_name") and not result.get("owner_name"):
-                    result["owner_name"] = sb.get("owner_name", "")
-        except Exception:
-            pass
+        result = _apply_sunbiz_lookup(result, name)
 
         if url:
             try:
