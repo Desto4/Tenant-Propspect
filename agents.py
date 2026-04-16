@@ -42,6 +42,8 @@ Step 3 — After enrichment completes, reply with ONE sentence: "Found and enric
 Do not call search_businesses_maps and enrich_leads_batch in the same response — they must be separate sequential calls because enrich_leads_batch needs the output of search_businesses_maps.
 Never call sunbiz_lookup, scrape_website_contact, or get_google_reviews individually.
 Only use apollo_search_people if the user explicitly asks for it.
+Only use search_businesses_yelp if the user asks for Yelp results or asks to search Yelp.
+Only use search_reddit if the user asks for Reddit intelligence, mentions, or community insights about businesses.
 
 **Writing outreach emails:**
 When asked to write outreach or draft emails, call save_outreach_csv with personalized emails for each lead.

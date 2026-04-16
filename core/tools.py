@@ -1,5 +1,8 @@
 """Central tool registry — schemas (TOOLS), dispatch map (TOOL_MAP), run_tool()."""
-from tools.browser  import search_businesses_maps, sunbiz_lookup, scrape_website_contact, get_google_reviews
+from tools.browser  import (
+    search_businesses_maps, sunbiz_lookup, scrape_website_contact, get_google_reviews,
+    search_businesses_yelp, search_reddit,
+)
 from tools.search   import web_search
 from tools.apollo   import apollo_search_people
 from tools.leads    import enrich_leads_batch, research_company, get_collected_leads, save_leads_csv, save_outreach_csv
@@ -180,6 +183,48 @@ TOOLS = [
         },
     },
     {
+        "name": "search_businesses_yelp",
+        "description": (
+            "Search Yelp for businesses by keyword and location using a headless browser. "
+            "Returns leads with name, address, phone, Yelp rating, review count, and website — "
+            "same lead shape as search_businesses_maps. "
+            "Use when the user asks for Yelp results or as a supplementary source alongside Google Maps."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keyword":     {"type": "string", "description": "Business type, e.g. 'nail salon'"},
+                "location":    {"type": "string", "description": "City and state, e.g. 'Miami, FL'"},
+                "num_results": {"type": "integer", "description": "Number of results (default 10, max 20)", "default": 10},
+            },
+            "required": ["keyword", "location"],
+        },
+    },
+    {
+        "name": "search_reddit",
+        "description": (
+            "Search Reddit for posts and discussions matching a query. "
+            "Useful for finding businesses mentioned in local subreddits, spotting companies "
+            "discussing expansion or new locations, or gathering tenant prospect intelligence "
+            "from community recommendations. "
+            "Optionally scope to specific subreddits (e.g. ['miami', 'entrepreneurs']). "
+            "Returns post titles, URLs, subreddit, score, comment count, and a text snippet."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query":       {"type": "string", "description": "Search query, e.g. 'nail salon Miami opening'"},
+                "subreddits":  {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of subreddits to search within, e.g. ['miami', 'smallbusiness']",
+                },
+                "num_results": {"type": "integer", "description": "Number of posts to return (default 10)", "default": 10},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "create_gmail_drafts",
         "description": (
             "Create Gmail drafts from the outreach emails so the user can review and send them manually from Gmail. "
@@ -205,9 +250,11 @@ TOOL_MAP = {
     "enrich_leads_batch":     enrich_leads_batch,
     "get_collected_leads":    get_collected_leads,
     "upload_leads_to_hubspot": upload_leads_to_hubspot,
-    "sunbiz_lookup":          sunbiz_lookup,
-    "scrape_website_contact": scrape_website_contact,
-    "get_google_reviews":     get_google_reviews,
+    "sunbiz_lookup":           sunbiz_lookup,
+    "scrape_website_contact":  scrape_website_contact,
+    "get_google_reviews":      get_google_reviews,
+    "search_businesses_yelp":  search_businesses_yelp,
+    "search_reddit":           search_reddit,
     "hubspot_create_contact": hubspot_create_contact,
     "save_leads_csv":         save_leads_csv,
     "save_outreach_csv":      save_outreach_csv,

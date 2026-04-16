@@ -473,3 +473,348 @@ def get_google_reviews(business_name: str, city: str = "", state: str = "") -> d
             count = cm.group(1).replace(",", "")
 
     return {"google_rating": rating, "google_review_count": count}
+
+
+# ── Yelp ──────────────────────────────────────────────────────────────────────
+
+def search_businesses_yelp(keyword: str, location: str, num_results: int = 10) -> dict:
+    """
+    Search Yelp for businesses by keyword and location using a headless browser.
+    Returns leads with name, address, phone, website, Yelp rating, review count,
+    and Yelp URL — same lead shape as search_businesses_maps.
+    """
+    from playwright.sync_api import sync_playwright
+    import time
+
+    num_results = min(int(num_results or 10), 20)
+    businesses  = []
+
+    try:
+        with sync_playwright() as pw:
+            browser = launch_chromium_resilient(pw, headless=True, args=_BROWSER_ARGS)
+            context = browser.new_context(user_agent=_USER_AGENT, viewport={"width": 1280, "height": 800})
+            page    = context.new_page()
+
+            search_url = (
+                f"https://www.yelp.com/search"
+                f"?find_desc={quote_plus(keyword)}&find_loc={quote_plus(location)}"
+            )
+            page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            # Give Yelp time to pass bot checks and fully render the list
+            time.sleep(5)
+            # Scroll to trigger lazy-loaded results
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            time.sleep(2)
+
+            # Collect detail-page URLs from the results list
+            links = page.query_selector_all('a[href*="/biz/"]')
+            biz_urls = []
+            seen = set()
+            for a in links:
+                href = a.get_attribute("href") or ""
+                # Skip ads, photos, reviews — only business pages
+                if "/biz/" not in href:
+                    continue
+                # Normalise to absolute
+                if href.startswith("/"):
+                    href = "https://www.yelp.com" + href
+                # Strip query params and fragments
+                href = href.split("?")[0].split("#")[0]
+                if href not in seen:
+                    seen.add(href)
+                    biz_urls.append(href)
+                if len(biz_urls) >= num_results * 2:
+                    break
+
+            for biz_url in biz_urls:
+                if len(businesses) >= num_results:
+                    break
+                try:
+                    page.goto(biz_url, wait_until="domcontentloaded", timeout=20000)
+                    time.sleep(2)
+                    html = page.content()
+
+                    # ── Name ──
+                    name_el = page.query_selector('h1')
+                    name    = name_el.inner_text().strip() if name_el else ""
+                    if not name:
+                        continue
+
+                    # ── Rating ──
+                    rating = ""
+                    rating_el = page.query_selector('[aria-label*="star rating"]')
+                    if rating_el:
+                        lbl = rating_el.get_attribute("aria-label") or ""
+                        rm  = re.search(r'(\d[\.,]\d)', lbl)
+                        if rm:
+                            rating = rm.group(1).replace(",", ".")
+                    if not rating:
+                        rm = re.search(r'"ratingValue"\s*:\s*"?([\d.]+)"?', html)
+                        if rm:
+                            rating = rm.group(1)
+
+                    # ── Review count ──
+                    review_count = ""
+                    rc_el = page.query_selector('[aria-label*="review"]')
+                    if rc_el:
+                        lbl = rc_el.get_attribute("aria-label") or rc_el.inner_text() or ""
+                        cm  = re.search(r'([\d,]+)', lbl)
+                        if cm:
+                            review_count = cm.group(1).replace(",", "")
+                    if not review_count:
+                        rm = re.search(r'"reviewCount"\s*:\s*(\d+)', html)
+                        if rm:
+                            review_count = rm.group(1)
+
+                    # ── Address ──
+                    address = ""
+                    addr_el = page.query_selector('address')
+                    if addr_el:
+                        address = " ".join(addr_el.inner_text().split())
+                    if not address:
+                        rm = re.search(r'"streetAddress"\s*:\s*"([^"]+)"', html)
+                        if rm:
+                            address = rm.group(1)
+
+                    city, state = "", ""
+                    city_m  = re.search(r'"addressLocality"\s*:\s*"([^"]+)"', html)
+                    state_m = re.search(r'"addressRegion"\s*:\s*"([^"]+)"',   html)
+                    if city_m:  city  = city_m.group(1)
+                    if state_m: state = state_m.group(1)
+
+                    # ── Phone ──
+                    phone = ""
+                    phone_m = re.search(r'"telephone"\s*:\s*"([^"]+)"', html)
+                    if phone_m:
+                        phone = phone_m.group(1)
+                    if not phone:
+                        tel_el = page.query_selector('a[href^="tel:"]')
+                        if tel_el:
+                            phone = (tel_el.get_attribute("href") or "").replace("tel:", "").strip()
+
+                    # ── Website ──
+                    website = ""
+                    ws_el   = page.query_selector('a[href*="biz_redir"]')
+                    if ws_el:
+                        raw = ws_el.get_attribute("href") or ""
+                        # Yelp wraps external links — extract the url= param
+                        url_m = re.search(r'[?&]url=([^&]+)', raw)
+                        if url_m:
+                            from urllib.parse import unquote
+                            website = unquote(url_m.group(1)).split("?")[0]
+
+                    businesses.append({
+                        "trade_name":          name,
+                        "entity_name":         "",
+                        "formation_date":      "",
+                        "years_in_business":   "",
+                        "sunbiz_status":       "",
+                        "sunbiz_url":          "",
+                        "general_email":       "",
+                        "business_phone":      phone,
+                        "address":             address,
+                        "city":                city,
+                        "state":               state,
+                        "website":             website,
+                        "owner_name":          "",
+                        "owner_email":         "",
+                        "owner_phone":         "",
+                        "registered_agent":    "",
+                        "reg_agent_address":   "",
+                        "reg_agent_email":     "",
+                        "reg_agent_phone":     "",
+                        "instagram_url":       "",
+                        "facebook_url":        "",
+                        "google_rating":       "",
+                        "google_review_count": "",
+                        "yelp_rating":         rating,
+                        "yelp_review_count":   review_count,
+                        "yelp_url":            biz_url,
+                        "industry":            keyword,
+                        "employees":           "",
+                        "linkedin_url":        "",
+                        "source":              "yelp",
+                    })
+
+                except Exception:
+                    continue
+
+            browser.close()
+    except Exception as e:
+        return {"error": str(e), "businesses": []}
+
+    if not businesses:
+        return {
+            "leads":   [],
+            "total":   0,
+            "warning": (
+                "Yelp returned no results. Yelp uses aggressive bot detection that may block "
+                "cloud/server IPs. This tool works best when running the app locally. "
+                "Try Google Maps search (search_businesses_maps) as an alternative."
+            ),
+        }
+    set_leads(businesses)
+    return {"leads": businesses, "total": len(businesses)}
+
+
+# ── Reddit ─────────────────────────────────────────────────────────────────────
+
+def search_reddit(query: str, subreddits: list = None, num_results: int = 10) -> dict:
+    """
+    Search Reddit for posts/discussions matching a query.
+    Uses Reddit's JSON API (no browser required for most queries, but falls back
+    to headless Playwright for JS-gated pages).
+
+    Useful for:
+    - Finding businesses mentioned in local subreddits (e.g. r/miami)
+    - Spotting businesses discussing expansion or new locations
+    - Gathering tenant prospect intelligence from community recommendations
+
+    Returns a list of posts: {title, url, subreddit, score, comments, snippet, author}.
+    """
+    subreddits = subreddits or []
+    results    = []
+
+    def _parse_posts(data: dict) -> list:
+        posts = []
+        for child in (data.get("data", {}).get("children") or []):
+            post = child.get("data", {})
+            if not post:
+                continue
+            posts.append({
+                "title":     post.get("title", ""),
+                "url":       "https://www.reddit.com" + post.get("permalink", ""),
+                "subreddit": post.get("subreddit_name_prefixed", ""),
+                "score":     post.get("score", 0),
+                "comments":  post.get("num_comments", 0),
+                "snippet":   (post.get("selftext") or "")[:300].strip(),
+                "author":    post.get("author", ""),
+                "created":   post.get("created_utc", 0),
+            })
+        return posts
+
+    headers = {
+        "User-Agent": "MMGAgent/1.0 (lead research tool)",
+        "Accept":     "application/json",
+    }
+
+    # ── Strategy 1: subreddit-scoped search ──────────────────────────────────
+    if subreddits:
+        for sr in subreddits:
+            if len(results) >= num_results:
+                break
+            sr = sr.lstrip("r/")
+            try:
+                url  = f"https://www.reddit.com/r/{sr}/search.json"
+                resp = requests.get(
+                    url,
+                    params={"q": query, "restrict_sr": "1", "sort": "relevance", "limit": num_results},
+                    headers=headers,
+                    timeout=15,
+                )
+                if resp.status_code == 200:
+                    results.extend(_parse_posts(resp.json()))
+            except Exception:
+                continue
+
+    # ── Strategy 2: site-wide JSON search ────────────────────────────────────
+    if len(results) < num_results:
+        for base in ["https://www.reddit.com", "https://old.reddit.com"]:
+            try:
+                resp = requests.get(
+                    f"{base}/search.json",
+                    params={"q": query, "sort": "relevance", "limit": num_results},
+                    headers=headers,
+                    timeout=15,
+                )
+                if resp.status_code == 200:
+                    results.extend(_parse_posts(resp.json()))
+                    break
+            except Exception:
+                continue
+
+    # ── Strategy 3: Playwright fallback (handles 403 / JS-gated) ─────────────
+    if not results:
+        try:
+            from playwright.sync_api import sync_playwright
+            import time
+            with sync_playwright() as pw:
+                browser = launch_chromium_resilient(pw, headless=True, args=_BROWSER_ARGS)
+                context = browser.new_context(user_agent=_USER_AGENT, viewport={"width": 1280, "height": 800})
+                page    = context.new_page()
+
+                # Try old Reddit first — simpler HTML, easier to scrape
+                for search_url in [
+                    f"https://old.reddit.com/search?q={quote_plus(query)}&sort=relevance",
+                    f"https://www.reddit.com/search/?q={quote_plus(query)}&sort=relevance",
+                ]:
+                    try:
+                        page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                        time.sleep(3)
+                        html = page.content()
+
+                        # old.reddit.com structure
+                        old_posts = re.findall(
+                            r'<p class="title"><a[^>]+href="(/r/[^"]+/comments/[^"]+)"[^>]*>([^<]+)</a>',
+                            html,
+                        )
+                        if old_posts:
+                            for link, title in old_posts[:num_results]:
+                                results.append({
+                                    "title":     title.strip(),
+                                    "url":       "https://www.reddit.com" + link.split("?")[0],
+                                    "subreddit": "",
+                                    "score":     0,
+                                    "comments":  0,
+                                    "snippet":   "",
+                                    "author":    "",
+                                    "created":   0,
+                                })
+                            break
+
+                        # new reddit fallback — pick h3 headings paired with /comments/ links
+                        links  = re.findall(r'href="(/r/[^"]+/comments/[^"?]+)', html)
+                        titles = re.findall(r'<h3[^>]*>([^<]{10,200})</h3>', html)
+                        for i, (link, title) in enumerate(zip(links, titles)):
+                            if i >= num_results:
+                                break
+                            results.append({
+                                "title":     title.strip(),
+                                "url":       "https://www.reddit.com" + link,
+                                "subreddit": "",
+                                "score":     0,
+                                "comments":  0,
+                                "snippet":   "",
+                                "author":    "",
+                                "created":   0,
+                            })
+                        if results:
+                            break
+                    except Exception:
+                        continue
+
+                browser.close()
+        except Exception:
+            pass
+
+    # Deduplicate by URL and cap
+    seen, deduped = set(), []
+    for post in results:
+        url = post.get("url", "")
+        if url and url not in seen:
+            seen.add(url)
+            deduped.append(post)
+
+    final = deduped[:num_results]
+    if not final:
+        return {
+            "posts":   [],
+            "total":   0,
+            "query":   query,
+            "warning": (
+                "Reddit returned no results. This usually means Reddit is rate-limiting "
+                "or blocking requests from this IP. Try again in a few minutes, or run "
+                "the app locally where Reddit access is not restricted."
+            ),
+        }
+    return {"posts": final, "total": len(final), "query": query}
