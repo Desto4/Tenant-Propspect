@@ -860,7 +860,11 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             try:
                 enrich_resp = requests.post(
                     "https://api.apollo.io/api/v1/people/bulk_match",
-                    params={"reveal_personal_emails": "true"},
+                    params={
+                        "reveal_personal_emails": "true",
+                        "reveal_phone_number": "false",
+                        "run_waterfall_phone": "false",
+                    },
                     json={"details": details},
                     headers=headers,
                     timeout=30,
@@ -1003,13 +1007,6 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             # Prefer Apollo contact email when available.
             apollo_email = _apollo_extract_person_email(best_person)
             owner_name = _person_name(best_person)
-            owner_phone = (
-                best_person.get("sanitized_phone")
-                or best_person.get("phone")
-                or best_person.get("direct_phone")
-                or ""
-            )
-
             lead = {
                 "trade_name":        org.get("name", ""),
                 "entity_name":       "",   # filled by sunbiz_lookup
@@ -1018,7 +1015,7 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
                 "general_email":     "",
                 "owner_name":        owner_name,
                 "owner_email":       apollo_email,
-                "owner_phone":       owner_phone,
+                "owner_phone":       "",
                 "registered_agent":  "",   # filled by sunbiz_lookup
                 "reg_agent_address": "",
                 "business_phone":    phone,
