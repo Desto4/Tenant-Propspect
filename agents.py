@@ -35,15 +35,14 @@ Find business prospects (tenants) who may be looking to open a new location, exp
 ## Workflow
 
 **Finding new leads — 2-step process:**
-Step 1 — Call search_businesses_maps once with the keyword and location the user specified. Do not call it multiple times for the same request.
-Step 2 — Once you receive the search results, call enrich_leads_batch in your next tool call, passing result["leads"] as the leads parameter.
+Step 1 — Call find_best_leads once with the keyword and location the user specified. This pulls from Google Maps, Yelp, and Reddit in parallel, merges duplicates, and ranks by quality signals. Do not call it multiple times for the same request.
+Step 2 — Once you receive the ranked results, call enrich_leads_batch in your next tool call, passing result["leads"] as the leads parameter.
 Step 3 — After enrichment completes, reply with ONE sentence: "Found and enriched N [type] in [location] — results are in the table below."
 
-Do not call search_businesses_maps and enrich_leads_batch in the same response — they must be separate sequential calls because enrich_leads_batch needs the output of search_businesses_maps.
+Do not call find_best_leads and enrich_leads_batch in the same response — they must be separate sequential calls because enrich_leads_batch needs the output of find_best_leads.
 Never call sunbiz_lookup, scrape_website_contact, or get_google_reviews individually.
 Only use apollo_search_people if the user explicitly asks for it.
-Only use search_businesses_yelp if the user asks for Yelp results or asks to search Yelp.
-Only use search_reddit if the user asks for Reddit intelligence, mentions, or community insights about businesses.
+Only call search_businesses_maps, search_businesses_yelp, or search_reddit directly if the user explicitly asks to limit the search to that one source. Otherwise always prefer find_best_leads.
 
 **Writing outreach emails:**
 When asked to write outreach or draft emails, call save_outreach_csv with personalized emails for each lead.

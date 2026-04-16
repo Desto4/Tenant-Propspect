@@ -3,6 +3,7 @@ from tools.browser  import (
     search_businesses_maps, sunbiz_lookup, scrape_website_contact, get_google_reviews,
     search_businesses_yelp, search_reddit,
 )
+from tools.multi_source import find_best_leads
 from tools.search   import web_search
 from tools.apollo   import apollo_search_people
 from tools.leads    import enrich_leads_batch, research_company, get_collected_leads, save_leads_csv, save_outreach_csv
@@ -10,6 +11,34 @@ from tools.hubspot  import hubspot_create_contact, upload_leads_to_hubspot
 from tools.gmail    import send_gmail_email, create_gmail_drafts
 
 TOOLS = [
+    {
+        "name": "find_best_leads",
+        "description": (
+            "PRIMARY multi-source lead discovery. Pulls from Google Maps, Yelp, and Reddit "
+            "in parallel, merges businesses that appear on multiple sources, scores each one "
+            "by quality signals (cross-source presence, Google rating × review count, "
+            "Yelp rating × review count, Reddit mentions, data completeness), and returns "
+            "the top N ranked leads. "
+            "Use this as the DEFAULT when the user asks to find leads, find businesses, "
+            "or find the best prospects — it produces better results than any single source alone. "
+            "After calling this, call enrich_leads_batch in your NEXT tool call to fill in "
+            "Sunbiz, website contact, and owner info."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keyword":     {"type": "string", "description": "Business type, e.g. 'nail salon'"},
+                "location":    {"type": "string", "description": "City and state, e.g. 'Miami, FL'"},
+                "num_results": {"type": "integer", "description": "Number of top-ranked leads to return (default 10, max 20)", "default": 10},
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of sources to query. Default: ['maps', 'yelp', 'reddit']",
+                },
+            },
+            "required": ["keyword", "location"],
+        },
+    },
     {
         "name": "search_businesses_maps",
         "description": (
@@ -244,6 +273,7 @@ TOOLS = [
 ]
 
 TOOL_MAP = {
+    "find_best_leads":        find_best_leads,
     "search_businesses_maps": search_businesses_maps,
     "web_search":             web_search,
     "apollo_search_people":   apollo_search_people,
