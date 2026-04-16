@@ -72,7 +72,7 @@ _GMAIL_SCOPES       = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
-_GMAIL_REDIRECT_URI = "http://localhost:8502/api/gmail/callback"
+_GMAIL_REDIRECT_URI = "http://localhost:8504/api/gmail/callback"
 
 def _load_gmail_creds():
     """Load Gmail OAuth credentials from disk, refresh if expired."""
@@ -2658,6 +2658,6 @@ def api_profile():
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.DEBUG)
-    port = int(os.environ.get("PORT", 8502))
+    port = int(os.environ.get("PORT", 8504))
     debug = os.environ.get("RAILWAY_ENVIRONMENT") is None  # debug only locally
     app.run(port=port, debug=debug, use_reloader=debug)
