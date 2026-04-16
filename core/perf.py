@@ -24,6 +24,7 @@ _MODEL_PRICING = {
     "sonar":               (1.00,  1.00),
     "sonar-reasoning-pro": (2.00,  8.00),
     "sonar-reasoning":     (1.00,  5.00),
+    "sonar-deep-research": (2.00,  8.00),
 }
 
 
