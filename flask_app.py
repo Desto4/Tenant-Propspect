@@ -276,7 +276,8 @@ TOOLS = [
     {
         "name": "apollo_search_people",
         "description": (
-            "Search for companies/organizations on Apollo.io by keyword and location. "
+            "Search Apollo for companies by keyword/location and, when available, "
+            "attach the best matching contact email for each company. "
             "Only use this if the user explicitly asks for Apollo results."
         ),
         "input_schema": {
@@ -761,23 +762,198 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
         "q_organization_keyword_tags": [keywords] if keywords else [],
         "organization_locations":      locations or [],
     }
+    headers = {
+        "Content-Type":  "application/json",
+        "Cache-Control": "no-cache",
+        "X-Api-Key":     apollo_key,
+    }
+
+    def _org_id(org):
+        return str(org.get("id") or org.get("organization_id") or "").strip()
+
+    def _person_org_id(person):
+        return str(
+            person.get("organization_id")
+            or (person.get("organization") or {}).get("id")
+            or ""
+        ).strip()
+
+    def _person_name(person):
+        name = (person.get("name") or "").strip()
+        if name:
+            return name
+        first = (person.get("first_name") or "").strip()
+        last = (
+            person.get("last_name")
+            or person.get("last_name_obfuscated")
+            or ""
+        ).strip()
+        return f"{first} {last}".strip()
+
+    def _person_rank(person):
+        title = (person.get("title") or "").lower()
+        email_status = (person.get("email_status") or person.get("email_status_cd") or "").lower()
+        score = 0
+        if person.get("has_email") or person.get("email"):
+            score += 100
+        if "verified" in email_status:
+            score += 30
+        elif "likely" in email_status:
+            score += 20
+        elif "unverified" in email_status:
+            score += 10
+        title_weights = [
+            ("owner", 80),
+            ("founder", 75),
+            ("chief executive", 70),
+            ("ceo", 70),
+            ("president", 60),
+            ("managing director", 55),
+            ("principal", 55),
+            ("partner", 55),
+            ("co-owner", 55),
+            ("head", 40),
+            ("director", 35),
+            ("manager", 25),
+        ]
+        for marker, weight in title_weights:
+            if marker in title:
+                score += weight
+                break
+        if person.get("linkedin_url"):
+            score += 5
+        return score
+
+    def _apollo_extract_person_email(person):
+        email = (person.get("email") or "").strip()
+        if email:
+            return email
+
+        for item in person.get("contact_emails") or []:
+            candidate = (item.get("email") or item.get("value") or "").strip()
+            if candidate:
+                return candidate
+
+        for item in person.get("emails") or []:
+            if isinstance(item, dict):
+                candidate = (item.get("email") or item.get("value") or "").strip()
+            else:
+                candidate = str(item).strip()
+            if candidate:
+                return candidate
+
+        return ""
+
+    def _apollo_enrich_people(selected_people):
+        enriched = {}
+        if not selected_people:
+            return enriched
+
+        for start in range(0, len(selected_people), 10):
+            chunk = selected_people[start:start + 10]
+            details = [{"id": pid} for pid, _person in chunk if pid]
+            if not details:
+                continue
+            try:
+                enrich_resp = requests.post(
+                    "https://api.apollo.io/api/v1/people/bulk_match",
+                    params={"reveal_personal_emails": "true"},
+                    json={"details": details},
+                    headers=headers,
+                    timeout=30,
+                )
+                enrich_data = enrich_resp.json()
+                matches = enrich_data.get("matches") or []
+                if enrich_resp.status_code >= 400:
+                    continue
+                for match in matches:
+                    if not isinstance(match, dict):
+                        continue
+                    pid = str(match.get("id") or "").strip()
+                    if pid:
+                        enriched[pid] = match
+            except Exception:
+                continue
+        return enriched
+
+    def _fetch_apollo_people(orgs):
+        org_ids = [_org_id(org) for org in orgs if _org_id(org)]
+        if not org_ids:
+            return {}
+
+        params = [
+            ("page", "1"),
+            ("per_page", str(min(max(len(org_ids) * 3, 10), 100))),
+            ("include_similar_titles", "true"),
+        ]
+        for org_id in org_ids:
+            params.append(("organization_ids[]", org_id))
+        for location in locations or []:
+            if location:
+                params.append(("organization_locations[]", location))
+        for status in ["verified", "likely to engage", "unverified"]:
+            params.append(("contact_email_status[]", status))
+        for seniority in ["owner", "founder", "c_suite", "partner", "vp", "head", "director", "manager"]:
+            params.append(("person_seniorities[]", seniority))
+        if keywords:
+            params.append(("q_keywords", keywords))
+
+        try:
+            people_resp = requests.post(
+                "https://api.apollo.io/api/v1/mixed_people/api_search",
+                params=params,
+                headers=headers,
+                timeout=30,
+            )
+            people_data = people_resp.json()
+            people = people_data.get("people") or []
+            if people_resp.status_code >= 400 or not isinstance(people, list):
+                return {}
+
+            grouped = {}
+            for person in people:
+                if not isinstance(person, dict):
+                    continue
+                org_id = _person_org_id(person)
+                if not org_id:
+                    continue
+                grouped.setdefault(org_id, []).append(person)
+
+            selected = {}
+            for org_id, candidates in grouped.items():
+                selected[org_id] = max(candidates, key=_person_rank)
+
+            enriched = _apollo_enrich_people([
+                (str(person.get("id") or "").strip(), person)
+                for person in selected.values()
+            ])
+
+            for org_id, person in list(selected.items()):
+                pid = str(person.get("id") or "").strip()
+                if pid and pid in enriched:
+                    selected[org_id] = {**person, **enriched[pid]}
+            return selected
+        except Exception:
+            return {}
+
     try:
         r = requests.post(
             "https://api.apollo.io/v1/organizations/search",
             json=payload,
-            headers={
-                "Content-Type":  "application/json",
-                "Cache-Control": "no-cache",
-                "X-Api-Key":     apollo_key,
-            },
+            headers=headers,
             timeout=30,
         )
         data = r.json()
         if "organizations" not in data:
             return {"error": f"Apollo error (HTTP {r.status_code}): {data}"}
 
+        organizations = data["organizations"]
+        people_by_org = _fetch_apollo_people(organizations)
+
         leads = []
-        for org in data["organizations"]:
+        for org in organizations:
+            org_id = _org_id(org)
+            best_person = people_by_org.get(org_id, {})
             # Phone — try multiple fields
             phone = org.get("phone") or ""
             if not phone:
@@ -799,18 +975,26 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
 
             website = org.get("website_url", "")
 
-            # Pull email via Hunter.io silently
+            # Prefer Apollo contact email when available; otherwise fall back to Hunter.
+            apollo_email = _apollo_extract_person_email(best_person)
             general_email = _hunter_domain_search(website) if website else ""
+            owner_name = _person_name(best_person)
+            owner_phone = (
+                best_person.get("sanitized_phone")
+                or best_person.get("phone")
+                or best_person.get("direct_phone")
+                or ""
+            )
 
             lead = {
                 "trade_name":        org.get("name", ""),
                 "entity_name":       "",   # filled by sunbiz_lookup
                 "formation_date":    formation_date,
                 "years_in_business": years_in_business,
-                "general_email":     general_email,
-                "owner_name":        "",
-                "owner_email":       "",
-                "owner_phone":       "",
+                "general_email":     general_email if not apollo_email else "",
+                "owner_name":        owner_name,
+                "owner_email":       apollo_email,
+                "owner_phone":       owner_phone,
                 "registered_agent":  "",   # filled by sunbiz_lookup
                 "reg_agent_address": "",
                 "business_phone":    phone,
@@ -822,7 +1006,7 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
                 "google_rating":     "",
                 "industry":          org.get("industry", ""),
                 "employees":         str(org.get("estimated_num_employees", "")),
-                "linkedin_url":      org.get("linkedin_url", ""),
+                "linkedin_url":      best_person.get("linkedin_url") or org.get("linkedin_url", ""),
                 "sunbiz_url":        "",
                 "sunbiz_status":     "",
             }
