@@ -777,6 +777,9 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             or ""
         ).strip()
 
+    def _norm_org_name(value):
+        return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
     def _person_name(person):
         name = (person.get("name") or "").strip()
         if name:
@@ -885,6 +888,13 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
         if not org_ids:
             return {}, []
 
+        org_name_to_id = {}
+        for org in orgs:
+            norm_name = _norm_org_name(org.get("name", ""))
+            org_id = _org_id(org)
+            if norm_name and org_id:
+                org_name_to_id[norm_name] = org_id
+
         params = [
             ("page", "1"),
             ("per_page", str(min(max(len(org_ids) * 3, 10), 100))),
@@ -914,28 +924,32 @@ def apollo_search_people(keywords=None, locations=None, num_results=20, _apollo_
             if people_resp.status_code >= 400 or not isinstance(people, list):
                 return {}, [f"Apollo people search failed (HTTP {people_resp.status_code}): {people_data}"]
 
+            enriched, enrich_errors = _apollo_enrich_people([
+                (str(person.get("id") or "").strip(), person)
+                for person in people
+            ])
+
             grouped = {}
             for person in people:
                 if not isinstance(person, dict):
                     continue
-                org_id = _person_org_id(person)
-                if not org_id:
+                pid = str(person.get("id") or "").strip()
+                enriched_person = enriched.get(pid, {})
+                merged_person = {**person, **enriched_person}
+
+                matched_org_id = _person_org_id(merged_person)
+                if not matched_org_id:
+                    matched_org_name = _norm_org_name(
+                        (merged_person.get("organization") or {}).get("name", "")
+                    )
+                    matched_org_id = org_name_to_id.get(matched_org_name, "")
+                if not matched_org_id:
                     continue
-                grouped.setdefault(org_id, []).append(person)
+                grouped.setdefault(matched_org_id, []).append(merged_person)
 
             selected = {}
-            for org_id, candidates in grouped.items():
-                selected[org_id] = max(candidates, key=_person_rank)
-
-            enriched, enrich_errors = _apollo_enrich_people([
-                (str(person.get("id") or "").strip(), person)
-                for person in selected.values()
-            ])
-
-            for org_id, person in list(selected.items()):
-                pid = str(person.get("id") or "").strip()
-                if pid and pid in enriched:
-                    selected[org_id] = {**person, **enriched[pid]}
+            for matched_org_id, candidates in grouped.items():
+                selected[matched_org_id] = max(candidates, key=_person_rank)
             return selected, enrich_errors
         except Exception as exc:
             return {}, [f"Apollo people search failed: {exc}"]
