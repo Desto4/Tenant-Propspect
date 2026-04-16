@@ -690,11 +690,6 @@
                                 class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-500 mb-1">Email Enrichment Key</label>
-                            <input id="input-hunter" type="password" placeholder="Hunter.io key..."
-                                class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
-                        </div>
-                        <div>
                             <label class="block text-xs text-gray-500 mb-1">HubSpot Token</label>
                             <input id="input-hubspot" type="password" placeholder="pat-na1-..."
                                 class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
@@ -1148,7 +1143,6 @@ function getToolMeta(name, inp) {
     const G  = { source:'Google',   sColor:'#1a73e8', sBg:'#e8f0fe' };
     const SB = { source:'Sunbiz',   sColor:'#059669', sBg:'#d1fae5' };
     const AP = { source:'Apollo',   sColor:'#7c3aed', sBg:'#ede9fe' };
-    const HU = { source:'Hunter',   sColor:'#7c3aed', sBg:'#ede9fe' };
     const HS = { source:'HubSpot',  sColor:'#ff7a59', sBg:'#fff1ee' };
     const GM = { source:'Gmail',    sColor:'#ea4335', sBg:'#fce8e6' };
     const CS = { source:'CSV',      sColor:'#374151', sBg:'#f3f4f6' };
@@ -1178,7 +1172,7 @@ function getToolMeta(name, inp) {
         case 'get_google_reviews':
             return { ...G,  label: `Opened Google Business profile for ${inp.business_name||''}` };
         case 'enrich_leads_batch':
-            return { ...HU, label: `Enriching ${inp.max_leads||'all'} leads with contact data` };
+            return { ...RE, label: `Enriching ${inp.max_leads||'all'} leads with contact data` };
         case 'apollo_search_people':
             return { ...AP, label: `Searching Apollo — ${inp.title||'contacts'} in ${inp.city||inp.location||''}` };
         case 'research_company':
@@ -2249,7 +2243,6 @@ async function saveConfig() {
         anthropic_key:       document.getElementById('input-anthropic').value.trim(),
         claude_model:        document.getElementById('input-claude-model').value,
         apollo_key:          document.getElementById('input-apollo').value.trim(),
-        hunter_key:          document.getElementById('input-hunter').value.trim(),
         hubspot_token:       document.getElementById('input-hubspot').value.trim(),
         gemini_key:          document.getElementById('input-gemini').value.trim(),
         gemini_model:        document.getElementById('input-gemini-model').value,
@@ -2278,7 +2271,6 @@ async function saveConfig() {
         // Clear sensitive inputs
         document.getElementById('input-anthropic').value        = '';
         document.getElementById('input-apollo').value           = '';
-        document.getElementById('input-hunter').value          = '';
         document.getElementById('input-hubspot').value          = '';
         document.getElementById('input-gemini').value           = '';
         document.getElementById('input-perplexity').value       = '';
