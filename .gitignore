@@ -14,3 +14,6 @@ flask.log
 
 # macOS
 .DS_Store
+
+# Local clone of external repos (not vendored into this project)
+MMG-Agent-v2/
