@@ -10,4 +10,4 @@ COPY . .
 
 EXPOSE 8504
 
-CMD gunicorn flask_app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 4
+CMD gunicorn flask_app_new:app --bind 0.0.0.0:${PORT:-8504} --timeout 120 --workers 1 --threads 4
