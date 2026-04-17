@@ -1,6 +1,7 @@
 """Playwright-backed browser tools: Google Maps search, Sunbiz, website scrape, Google reviews."""
 import html
 import re
+import threading
 import requests
 from datetime import datetime
 from urllib.parse import quote_plus
@@ -19,6 +20,9 @@ SCRAPE_HEADERS = {
     "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+# Playwright sync API is not thread-safe; serialize all Sunbiz browser work.
+_SUNBIZ_PLAYWRIGHT_LOCK = threading.Lock()
 
 
 def _sunbiz_unescape(text: str) -> str:
@@ -244,6 +248,14 @@ def search_businesses_maps(keyword: str, location: str, num_results: int = 10) -
 
 def sunbiz_lookup(business_name: str) -> dict:
     """Search Florida Sunbiz corporate registry using a headless browser."""
+    from playwright.sync_api import sync_playwright
+    import time
+
+    with _SUNBIZ_PLAYWRIGHT_LOCK:
+        return _sunbiz_lookup_impl(business_name)
+
+
+def _sunbiz_lookup_impl(business_name: str) -> dict:
     from playwright.sync_api import sync_playwright
     import time
 
