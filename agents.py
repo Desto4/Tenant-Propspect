@@ -96,6 +96,24 @@ def _hs_start_leads():
     ]
 
 
+def _lead_completion_text(result: dict) -> str:
+    """One-line completion text for lead-generation workflows."""
+    leads = result.get("leads") if isinstance(result, dict) else []
+    if not leads:
+        return "Lead search completed."
+    count = len(leads)
+    industry = (leads[0].get("industry") or "businesses").strip() if isinstance(leads[0], dict) else "businesses"
+    cities = sorted({
+        (l.get("city") or "").strip()
+        for l in leads
+        if isinstance(l, dict) and (l.get("city") or "").strip()
+    })
+    location = ", ".join(cities[:2]) if cities else "the requested market"
+    if len(cities) > 2:
+        location += " area"
+    return f"Found and enriched {count} {industry} in {location} — results are in the table below."
+
+
 # ── Response cleanup ──────────────────────────────────────────────────────────
 
 def _strip_think_blocks(text: str) -> str:
@@ -166,6 +184,13 @@ def _run_agent_openai_compat(
                 tool_results.append({
                     "role": "tool", "tool_call_id": tc.id, "content": json.dumps(result),
                 })
+                # Hard stop for lead-generation flow: once enrichment finishes, return the final sentence
+                # instead of letting the model loop back into another search call.
+                if name == "enrich_leads_batch" and isinstance(result, dict) and result.get("leads"):
+                    yield f"data: {json.dumps({'type': 'text', 'content': _lead_completion_text(result)})}\n\n"
+                    success = True
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
             messages.extend(tool_results)
         success = True
     except Exception as e:
@@ -397,6 +422,11 @@ def run_agent_anthropic(
                 tool_results.append({
                     "type": "tool_result", "tool_use_id": tc.id, "content": json.dumps(result),
                 })
+                if tc.name == "enrich_leads_batch" and isinstance(result, dict) and result.get("leads"):
+                    yield f"data: {json.dumps({'type': 'text', 'content': _lead_completion_text(result)})}\n\n"
+                    success = True
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
             api_messages.append({"role": "user", "content": tool_results})
         success = True
     except Exception as e:
