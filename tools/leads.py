@@ -17,10 +17,26 @@ LEAD_FIELDS = [
     "registered_agent", "reg_agent_address", "reg_agent_email", "reg_agent_phone",
     "instagram_url", "facebook_url", "google_review_count", "google_rating",
     "industry", "employees", "linkedin_url",
+    "dbpr_license_type", "dbpr_license_number", "dbpr_status", "dbpr_expires", "dbpr_url",
 ]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _should_use_dbpr(lead: dict) -> bool:
+    """DBPR is most useful for Florida regulated salon/cosmetology-style businesses."""
+    state = (lead.get("state") or "").strip().upper()
+    address = (lead.get("address") or "").upper()
+    if state != "FL" and ", FL " not in address and not address.endswith(", FL"):
+        return False
+    hay = " ".join([
+        lead.get("industry", ""),
+        lead.get("trade_name", ""),
+        lead.get("entity_name", ""),
+    ]).lower()
+    needles = ("nail", "salon", "barber", "cosmet", "spa")
+    return any(n in hay for n in needles)
+
 
 def _save_leads_to_file(leads: list) -> None:
     try:
@@ -182,7 +198,7 @@ def save_outreach_csv(drafts: list) -> dict:
 
 def enrich_leads_batch(leads=None) -> dict:
     """Enrich every lead in parallel with Sunbiz, website, Google reviews, and web-search contacts."""
-    from tools.browser import sunbiz_lookup, scrape_website_contact, get_google_reviews
+    from tools.browser import sunbiz_lookup, dbpr_lookup, scrape_website_contact, get_google_reviews
 
     if not leads:
         leads = list(get_leads())
@@ -213,6 +229,18 @@ def enrich_leads_batch(leads=None) -> dict:
                     result["owner_name"] = sb.get("owner_name", "")
         except Exception:
             pass
+
+        if _should_use_dbpr(result):
+            try:
+                dbpr = dbpr_lookup(name)
+                if dbpr.get("found"):
+                    result["dbpr_license_type"]   = dbpr.get("dbpr_license_type", "")
+                    result["dbpr_license_number"] = dbpr.get("dbpr_license_number", "")
+                    result["dbpr_status"]         = dbpr.get("dbpr_status", "")
+                    result["dbpr_expires"]        = dbpr.get("dbpr_expires", "")
+                    result["dbpr_url"]            = dbpr.get("dbpr_url", "")
+            except Exception:
+                pass
 
         if url:
             try:

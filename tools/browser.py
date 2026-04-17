@@ -1,4 +1,4 @@
-"""Playwright-backed browser tools: Google Maps search, Sunbiz, website scrape, Google reviews."""
+"""Playwright-backed browser tools: Google Maps search, Sunbiz, DBPR, website scrape, Google reviews."""
 import re
 import requests
 from datetime import datetime
@@ -18,6 +18,12 @@ SCRAPE_HEADERS = {
     "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+_DBPR_ROW_RE = re.compile(
+    r"^(?P<license_type>[^\t]+)\t(?P<name>[^\t]+)\t(?P<name_type>[^\t]+)\t"
+    r"(?P<license_number>[A-Z0-9]+)\n(?P<rank>[^\t\n]+)\t(?P<status>[^\n]+)"
+    r"(?:\n(?P<expires>[0-9/]+))?$"
+)
 
 
 def search_businesses_maps(keyword: str, location: str, num_results: int = 10) -> dict:
@@ -350,6 +356,92 @@ def sunbiz_lookup(business_name: str) -> dict:
             "reg_agent_address": reg_agent_address,
             "owner_name":        owner_name,
         }
+    except Exception as e:
+        return {"error": str(e), "searched": business_name}
+
+
+def dbpr_lookup(business_name: str) -> dict:
+    """Search Florida DBPR license search for a business/organization name."""
+    from playwright.sync_api import sync_playwright
+    import time
+
+    def _score(search: str, record: dict) -> float:
+        search_words = set(re.sub(r"[^a-z0-9\s]", "", (search or "").lower()).split())
+        name_words   = set(re.sub(r"[^a-z0-9\s]", "", (record.get("name") or "").lower()).split())
+        noise = {"llc", "inc", "corp", "co", "ltd", "the", "and", "of"}
+        search_core = search_words - noise
+        name_core   = name_words - noise
+        overlap = len(search_core & name_core)
+        status = (record.get("dbpr_status") or "").lower()
+        bonus = 0.0
+        if "current" in status and "active" in status:
+            bonus += 3.0
+        elif "active" in status:
+            bonus += 2.0
+        elif "current" in status:
+            bonus += 1.5
+        if "salon" in (record.get("dbpr_license_type") or "").lower():
+            bonus += 1.0
+        if "owner" in (record.get("dbpr_license_type") or "").lower():
+            bonus -= 1.0
+        return overlap * 2.0 + bonus
+
+    try:
+        with sync_playwright() as pw:
+            browser = launch_chromium_resilient(pw, headless=True, args=_BROWSER_ARGS)
+            context = browser.new_context(
+                user_agent=_USER_AGENT, viewport={"width": 1280, "height": 900}
+            )
+            page = context.new_page()
+            page.goto(
+                "https://www.myfloridalicense.com/wl11.asp?mode=1&SID=&brd=&search=Name&typ=",
+                wait_until="domcontentloaded", timeout=30000,
+            )
+            time.sleep(1.5)
+            if not page.query_selector('input[name="OrgName"]'):
+                browser.close()
+                return {"found": False, "searched": business_name, "error": "DBPR search form unavailable"}
+            page.fill('input[name="OrgName"]', business_name)
+            if page.query_selector('input[name="SearchPartName"]'):
+                page.check('input[name="SearchPartName"]')
+            page.click('button[name="Search1"]')
+            page.wait_for_load_state("domcontentloaded", timeout=30000)
+            time.sleep(1.5)
+
+            rows = page.query_selector_all("table tr")
+            records = []
+            for i, row in enumerate(rows):
+                text = (row.inner_text() or "").strip()
+                m = _DBPR_ROW_RE.match(text)
+                if not m:
+                    continue
+                rec = {
+                    "name":               m.group("name").strip(),
+                    "dbpr_license_type":  m.group("license_type").strip(),
+                    "dbpr_name_type":     m.group("name_type").strip(),
+                    "dbpr_license_number": m.group("license_number").strip(),
+                    "dbpr_rank":          m.group("rank").strip(),
+                    "dbpr_status":        m.group("status").strip().strip(","),
+                    "dbpr_expires":       (m.group("expires") or "").strip(),
+                    "dbpr_url":           page.url,
+                }
+                # Address usually follows on the next couple rows.
+                for follow in rows[i + 1:i + 4]:
+                    follow_text = (follow.inner_text() or "").strip()
+                    if "License Location Address" in follow_text or follow_text.startswith("Main Address"):
+                        addr = re.sub(r"^[A-Za-z /]*Address\*?:\s*", "", follow_text).strip()
+                        if addr:
+                            rec["dbpr_address"] = addr
+                            break
+                records.append(rec)
+            browser.close()
+
+        if not records:
+            return {"found": False, "searched": business_name}
+        best = max(records, key=lambda r: _score(business_name, r))
+        best["found"] = True
+        best["searched"] = business_name
+        return best
     except Exception as e:
         return {"error": str(e), "searched": business_name}
 

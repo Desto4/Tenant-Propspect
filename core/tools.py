@@ -1,7 +1,7 @@
 """Central tool registry — schemas (TOOLS), dispatch map (TOOL_MAP), run_tool()."""
 from tools.browser  import (
     search_businesses_maps, sunbiz_lookup, scrape_website_contact, get_google_reviews,
-    search_businesses_yelp, search_reddit,
+    search_businesses_yelp, search_reddit, dbpr_lookup,
 )
 from tools.multi_source import find_best_leads
 from tools.perplexity_search import search_businesses_perplexity
@@ -38,6 +38,21 @@ TOOLS = [
                 },
             },
             "required": ["keyword", "location"],
+        },
+    },
+    {
+        "name": "dbpr_lookup",
+        "description": (
+            "Lookup a Florida business or professional license in the Department of Business "
+            "and Professional Regulation (DBPR) portal by organization/business name. Useful "
+            "for cosmetology salons, restaurants, contractors, and other DBPR-regulated Florida businesses."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "business_name": {"type": "string", "description": "Business or organization name to search"},
+            },
+            "required": ["business_name"],
         },
     },
     {
@@ -293,6 +308,7 @@ TOOLS = [
 
 TOOL_MAP = {
     "find_best_leads":        find_best_leads,
+    "dbpr_lookup":            dbpr_lookup,
     "search_businesses_maps": search_businesses_maps,
     "web_search":             web_search,
     "apollo_search_people":   apollo_search_people,
