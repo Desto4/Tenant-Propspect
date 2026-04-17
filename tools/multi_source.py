@@ -14,9 +14,14 @@ Ranking signals:
 import concurrent.futures
 import re
 
+import requests
+
 from core.state import set_leads
 
 from tools.leads import enrich_leads_sunbiz_only
+
+# Cache Nominatim results per process (avoid repeat lookups for the same location string).
+_GEOCODE_FL_CACHE: dict[str, bool] = {}
 
 
 # ── Normalization / dedup helpers ─────────────────────────────────────────────
@@ -144,9 +149,73 @@ def _lead_list_suggests_florida(leads: list) -> bool:
     return False
 
 
+def _location_geocodes_to_florida(location: str) -> bool:
+    """Resolve the free-text location via OpenStreetMap Nominatim; True if the top hit is in Florida.
+
+    This covers city-only queries (e.g. 'Winter Haven') without maintaining a huge city list.
+    Uses a small in-memory cache. On failure or ambiguous results, returns False.
+    """
+    q = (location or "").strip()
+    if not q:
+        return False
+    key = q.lower()
+    if key in _GEOCODE_FL_CACHE:
+        return _GEOCODE_FL_CACHE[key]
+
+    try:
+        r = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q":             f"{q}, USA",
+                "format":        "json",
+                "limit":         1,
+                "addressdetails": 1,
+            },
+            headers={
+                "User-Agent": (
+                    "TenantProspect/1.0 (https://github.com/Desto4/Tenant-Propspect; "
+                    "Florida Sunbiz location check)"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=10,
+        )
+        if r.status_code != 200:
+            _GEOCODE_FL_CACHE[key] = False
+            return False
+        data = r.json()
+        if not data:
+            _GEOCODE_FL_CACHE[key] = False
+            return False
+        addr = (data[0].get("address") or {}) if isinstance(data[0], dict) else {}
+        state = (addr.get("state") or "").strip().lower()
+        # Nominatim US: state is often full name
+        if state in ("florida", "fl"):
+            _GEOCODE_FL_CACHE[key] = True
+            return True
+        # ISO/state_code style when present
+        sc = (addr.get("ISO3166-2-lvl4") or "").upper()
+        if sc == "US-FL":
+            _GEOCODE_FL_CACHE[key] = True
+            return True
+        disp = (data[0].get("display_name") or "")
+        if re.search(r",\s*FL\s*,", disp) or ", Florida," in disp:
+            _GEOCODE_FL_CACHE[key] = True
+            return True
+        _GEOCODE_FL_CACHE[key] = False
+        return False
+    except Exception:
+        _GEOCODE_FL_CACHE[key] = False
+        return False
+
+
 def _should_run_sunbiz(location: str, ranked_leads: list) -> bool:
-    """Run Florida registry lookup when the query or the lead rows indicate Florida."""
-    return _location_looks_florida(location) or _lead_list_suggests_florida(ranked_leads)
+    """Run Florida registry lookup when the query, geocoding, or lead rows indicate Florida."""
+    if _location_looks_florida(location):
+        return True
+    if _lead_list_suggests_florida(ranked_leads):
+        return True
+    return _location_geocodes_to_florida(location)
 
 
 def _build_reddit_mention_map(posts: list, candidate_names: list) -> dict:
