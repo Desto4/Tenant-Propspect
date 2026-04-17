@@ -170,11 +170,6 @@
                         <i class="fa-solid fa-chart-bar w-5 text-center"></i>
                         <span class="text-sm font-medium">Performance</span>
                     </a>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#242d3d] hover:text-white transition-colors cursor-pointer relative">
-                        <i class="fa-regular fa-bell w-5 text-center"></i>
-                        <span class="text-sm font-medium">Notifications</span>
-                        <span class="ml-auto bg-teal-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">3</span>
-                    </a>
                 </nav>
             </div>
         </div>
@@ -462,10 +457,6 @@
                             class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-gray-100 text-gray-900 transition-colors text-left">
                             <i class="fa-regular fa-circle-user w-4 text-center text-gray-500"></i> General
                         </button>
-                        <button onclick="showSettingsTab('notifications')" data-tab="notifications"
-                            class="settings-tab w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors text-left">
-                            <i class="fa-regular fa-bell w-4 text-center text-gray-400"></i> Notifications
-                        </button>
                     </nav>
                 </div>
 
@@ -522,12 +513,6 @@
                         </div>
                     </div>
 
-                    <!-- Notifications tab -->
-                    <div id="settings-notifications" class="max-w-xl hidden">
-                        <h2 class="text-2xl font-bold text-gray-900">Notifications</h2>
-                        <p class="text-sm text-gray-400 mt-1 mb-8">Manage how you receive alerts.</p>
-                        <div class="bg-white border border-gray-200 rounded-2xl p-6 text-sm text-gray-400 text-center py-12">Coming soon</div>
-                    </div>
 
 
                 </div>
@@ -2264,7 +2249,7 @@ document.getElementById('settings-modal').addEventListener('click', function(e) 
 });
 
 function showSettingsTab(tab) {
-    ['general','security','notifications','sessions'].forEach(t => {
+    ['general','security','sessions'].forEach(t => {
         document.getElementById(`settings-${t}`).classList.add('hidden');
     });
     document.getElementById(`settings-${tab}`).classList.remove('hidden');
