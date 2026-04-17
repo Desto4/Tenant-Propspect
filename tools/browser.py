@@ -25,7 +25,7 @@ def search_businesses_maps(keyword: str, location: str, num_results: int = 10) -
     from playwright.sync_api import sync_playwright
     import time
 
-    num_results = min(int(num_results or 10), 20)
+    num_results = min(int(num_results or 10), 50)
     query       = f"{keyword} {location}"
     businesses  = []
 
@@ -59,12 +59,63 @@ def search_businesses_maps(keyword: str, location: str, num_results: int = 10) -
                     pass
 
             time.sleep(2)
-            fetch_count = (num_results * 2) + 5
-            cards       = page.query_selector_all("a.hfpxzc")
-            card_urls   = [
-                c.get_attribute("href") for c in cards[:fetch_count]
-                if (c.get_attribute("href") or "").startswith("https://")
+            fetch_count = min((num_results * 3) + 10, 120)
+            card_urls   = []
+            seen_urls   = set()
+
+            def _collect_card_urls():
+                added = 0
+                for c in page.query_selector_all("a.hfpxzc"):
+                    href = c.get_attribute("href") or ""
+                    if href.startswith("https://") and href not in seen_urls:
+                        seen_urls.add(href)
+                        card_urls.append(href)
+                        added += 1
+                        if len(card_urls) >= fetch_count:
+                            break
+                return added
+
+            _collect_card_urls()
+
+            # Google Maps lazy-loads the result rail. On cloud hosts where Yelp/Reddit
+            # often contribute nothing, we need to scroll Maps further to meet larger
+            # requested lead counts.
+            scroll_selectors = [
+                'div[role="feed"]',
+                'div[aria-label*="Results for"]',
+                'div[aria-label*="Results"]',
             ]
+            scroller = None
+            for sel in scroll_selectors:
+                try:
+                    scroller = page.query_selector(sel)
+                    if scroller:
+                        break
+                except Exception:
+                    continue
+
+            stagnant = 0
+            for _ in range(14):
+                if len(card_urls) >= fetch_count:
+                    break
+                try:
+                    if scroller:
+                        scroller.evaluate("(el) => { el.scrollTop = el.scrollHeight; }")
+                    else:
+                        page.mouse.wheel(0, 2500)
+                except Exception:
+                    try:
+                        page.mouse.wheel(0, 2500)
+                    except Exception:
+                        pass
+                time.sleep(1.2)
+                added = _collect_card_urls()
+                if added == 0:
+                    stagnant += 1
+                    if stagnant >= 3:
+                        break
+                else:
+                    stagnant = 0
 
             for url in card_urls:
                 if len(businesses) >= num_results:
@@ -168,7 +219,14 @@ def search_businesses_maps(keyword: str, location: str, num_results: int = 10) -
         return {"error": str(e), "businesses": []}
 
     set_leads(businesses)
-    return {"leads": businesses, "total": len(businesses)}
+    out = {"leads": businesses, "total": len(businesses)}
+    if len(businesses) < num_results:
+        out["warning"] = (
+            f"Google Maps returned {len(businesses)} business(es) for a request of {num_results}. "
+            "This usually means Maps stopped lazy-loading more cards, or the market has fewer visible results "
+            "from this IP/session."
+        )
+    return out
 
 
 def sunbiz_lookup(business_name: str) -> dict:

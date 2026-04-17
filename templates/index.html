@@ -2003,7 +2003,7 @@ function renderLeadsTable(leads, toolName) {
                     </table>
                 </div>
                 ${footerHtml}
-                ${leads.length > 20 ? `<div class="px-5 py-2 text-xs text-gray-400 bg-gray-50 border-t border-gray-100 text-center">+${leads.length - 20} more · <a href="/api/download/leads" class="text-teal-600 hover:underline">Download CSV</a></div>` : ''}
+                ${leads.length > 20 ? `<div class="px-5 py-2 text-xs text-gray-500 bg-gray-50 border-t border-gray-100 text-center">Showing first 20 of ${leads.length} results in chat · +${leads.length - 20} more in the full lead set · <a href="/api/download/leads" class="text-teal-600 hover:underline">Download CSV</a></div>` : ''}
             </div>
             <!-- Quick action buttons -->
             <div class="flex flex-wrap gap-2 mt-3">
