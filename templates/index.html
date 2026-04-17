@@ -1503,9 +1503,18 @@ function finalizeHubSpotCard(result) {
     // Update footer
     const footer = _hsCard.querySelector('.hs-footer-status');
     if (footer) {
-        const uploaded = result?.uploaded ?? _hsContacts.length;
-        footer.className = 'hs-footer-status text-xs font-semibold text-teal-500';
-        footer.textContent = `${uploaded} uploaded`;
+        if (result && result.error) {
+            footer.className = 'hs-footer-status text-xs font-semibold text-red-600';
+            footer.textContent = escHtml(String(result.error).slice(0, 200));
+        } else {
+            const uploaded = result?.uploaded ?? _hsContacts.length;
+            const skipped = result?.skipped ?? 0;
+            const errs = (result?.errors && result.errors.length)
+                ? ` · ${result.errors.length} issue(s)`
+                : '';
+            footer.className = 'hs-footer-status text-xs font-semibold text-teal-500';
+            footer.textContent = `${uploaded} uploaded${skipped ? ` · ${skipped} skipped` : ''}${errs}`;
+        }
     }
     _hsCard = null;
     _hsContacts = [];
@@ -1613,10 +1622,13 @@ async function sendMessage(prefill) {
                     currentToolName = evt.name;
                     // Strip cursor span from any prior text bubble
                     if (agentContentEl) agentContentEl.innerHTML = renderMarkdown(agentText);
-                    if (evt.name === 'upload_leads_to_hubspot' && evt.leads?.length) {
-                        // Specialized HubSpot card
+                    if (evt.name === 'upload_leads_to_hubspot') {
+                        // Specialized HubSpot card (always show — preview list may be empty if emails only on reg_agent)
                         finalizeProgressCard();   // close any open progress card first
-                        createHubSpotCard(evt.leads);
+                        const preview = (evt.leads && evt.leads.length)
+                            ? evt.leads
+                            : [{ company: 'Session leads', email: '…' }];
+                        createHubSpotCard(preview);
                     } else {
                         addProgressStep(evt.name, evt.input || {});
                     }
@@ -1683,6 +1695,14 @@ async function sendMessage(prefill) {
                             } else {
                                 task.outputs.push('1 HubSpot contact');
                             }
+                            renderTasks();
+                        }
+                    }
+                    if (evt.name === 'upload_leads_to_hubspot' && evt.result && !evt.result.error) {
+                        if (task) {
+                            const u = evt.result.uploaded ?? 0;
+                            task.outputs = task.outputs.filter(o => !o.includes('HubSpot'));
+                            task.outputs.push(`${u} HubSpot contact${u !== 1 ? 's' : ''} synced`);
                             renderTasks();
                         }
                     }
@@ -1927,7 +1947,6 @@ function renderLeadsTable(leads, toolName) {
                         ['Entity Name',   l.entity_name],
                         ['Formation',     l.formation_date],
                         ['Industry',      l.industry],
-                        ['Employees',     l.employees],
                         ['Business Phone',l.business_phone],
                         ['Website',       l.website ? `<a href="${escHtml(l.website)}" target="_blank" class="text-teal-600 underline">${escHtml(l.website)}</a>` : ''],
                         ['LinkedIn',      l.linkedin_url ? `<a href="${escHtml(l.linkedin_url)}" target="_blank" class="text-blue-600 underline">View</a>` : ''],

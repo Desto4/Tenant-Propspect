@@ -85,15 +85,26 @@ def _tools_openai_fmt():
 
 
 def _hs_start_leads():
-    """Build the HubSpot preview payload from current leads store."""
-    return [
-        {
-            "company": (l.get("trade_name") or l.get("entity_name") or "").strip(),
-            "email":   (l.get("owner_email") or l.get("general_email") or "").strip(),
-        }
-        for l in get_leads()
-        if l.get("owner_email") or l.get("general_email")
-    ]
+    """Build the HubSpot preview payload from current leads store.
+
+    Must match upload_leads_to_hubspot email selection (owner → general → reg agent)
+    so the chat UI row count matches what the tool actually uploads.
+    """
+    out = []
+    for l in get_leads():
+        email = (
+            (l.get("owner_email") or l.get("general_email") or l.get("reg_agent_email") or "")
+            .strip()
+        )
+        if not email:
+            continue
+        out.append(
+            {
+                "company": (l.get("trade_name") or l.get("entity_name") or "").strip(),
+                "email":   email,
+            }
+        )
+    return out
 
 
 # ── Response cleanup ──────────────────────────────────────────────────────────
