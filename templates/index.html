@@ -1177,6 +1177,13 @@ function getToolMeta(name, inp) {
     switch (name) {
         case 'web_search':
             return { ...G,  label: `Searched Google for '${(inp.query||'').substring(0,55)}'` };
+        case 'find_best_leads':
+            return {
+                source: 'Leads',
+                sColor: '#0f766e',
+                sBg: '#ccfbf1',
+                label: `Finding best leads — ${inp.keyword||''} in ${inp.location||''}`,
+            };
         case 'search_businesses_maps':
             return { ...G,  label: `Searching Google Maps — ${inp.keyword||''} in ${inp.location||''}`,
                             source: 'Maps' };
@@ -1226,6 +1233,16 @@ function getResultSubtitle(name, result) {
                 if (result.results && result.results.length)
                     return `Found ${result.results.length} results — top match ${(result.results[0].url||'').replace(/https?:\/\//,'').split('/')[0]}`;
                 break;
+            case 'find_best_leads':
+                if (result.total != null) {
+                    const breakdown = result.breakdown || {};
+                    const parts = [];
+                    if (breakdown.maps) parts.push(`${breakdown.maps} Maps`);
+                    if (breakdown.perplexity) parts.push(`${breakdown.perplexity} Perplexity`);
+                    if (breakdown.yelp) parts.push(`${breakdown.yelp} Yelp`);
+                    return `Ranked ${result.total} leads${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+                }
+                break;
             case 'get_google_reviews':
                 if (result.rating) return `${result.rating} stars · ${result.review_count||0} reviews`;
                 break;
@@ -1245,16 +1262,16 @@ function getResultSubtitle(name, result) {
                 if (result.text)  return result.text.substring(0,80) + '…';
                 break;
             case 'enrich_leads_batch':
-                if (result.enriched != null) return `Enriched ${result.enriched} of ${result.total||'?'} leads`;
+                if (result.total != null) return `Enriched ${result.total} leads`;
                 break;
             case 'search_businesses_maps':
-                if (Array.isArray(result)) return `Found ${result.length} businesses`;
+                if (result.total != null) return `Found ${result.total} businesses`;
                 break;
             case 'apollo_search_people':
                 if (result.leads) return `Found ${result.leads.length} contacts`;
                 break;
             case 'get_collected_leads':
-                if (Array.isArray(result)) return `${result.length} leads in pipeline`;
+                if (result.leads && result.leads.length != null) return `${result.leads.length} leads in pipeline`;
                 break;
         }
     } catch(e) {}
