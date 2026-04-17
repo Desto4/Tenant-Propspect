@@ -36,8 +36,8 @@ Find business prospects (tenants) who may be looking to open a new location, exp
 ## Workflow
 
 **Finding new leads — 2-step process:**
-Step 1 — Call find_best_leads once with the keyword and location the user specified. This pulls from Google Maps, Yelp, and Reddit in parallel, merges duplicates, and ranks by quality signals. Do not call it multiple times for the same request.
-Step 2 — Once you receive the ranked results, call enrich_leads_batch in your next tool call, passing result["leads"] as the leads parameter.
+Step 1 — Call find_best_leads once with the keyword and location the user specified. This pulls from Google Maps, Yelp, Reddit, and Perplexity in parallel, merges duplicates, ranks by quality signals, and when the search is in Florida (location text, geocoded city, or lead address/state) automatically runs Florida Sunbiz (Division of Corporations) on each ranked lead. Do not call it multiple times for the same request.
+Step 2 — Once you receive the ranked results, call enrich_leads_batch in your next tool call, passing result["leads"] as the leads parameter (this adds website scrape, contact search, and fills any gaps — Sunbiz is skipped for leads that already have sunbiz_url).
 Step 3 — After enrichment completes, reply with ONE sentence: "Found and enriched N [type] in [location] — results are in the table below."
 
 Do not call find_best_leads and enrich_leads_batch in the same response — they must be separate sequential calls because enrich_leads_batch needs the output of find_best_leads.
@@ -85,15 +85,26 @@ def _tools_openai_fmt():
 
 
 def _hs_start_leads():
-    """Build the HubSpot preview payload from current leads store."""
-    return [
-        {
-            "company": (l.get("trade_name") or l.get("entity_name") or "").strip(),
-            "email":   (l.get("owner_email") or l.get("general_email") or "").strip(),
-        }
-        for l in get_leads()
-        if l.get("owner_email") or l.get("general_email")
-    ]
+    """Build the HubSpot preview payload from current leads store.
+
+    Must match upload_leads_to_hubspot email selection (owner → general → reg agent)
+    so the chat UI row count matches what the tool actually uploads.
+    """
+    out = []
+    for l in get_leads():
+        email = (
+            (l.get("owner_email") or l.get("general_email") or l.get("reg_agent_email") or "")
+            .strip()
+        )
+        if not email:
+            continue
+        out.append(
+            {
+                "company": (l.get("trade_name") or l.get("entity_name") or "").strip(),
+                "email":   email,
+            }
+        )
+    return out
 
 
 # ── Response cleanup ──────────────────────────────────────────────────────────

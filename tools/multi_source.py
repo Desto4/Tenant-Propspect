@@ -14,7 +14,14 @@ Ranking signals:
 import concurrent.futures
 import re
 
+import requests
+
 from core.state import set_leads
+
+from tools.leads import enrich_leads_sunbiz_only
+
+# Cache Nominatim results per process (avoid repeat lookups for the same location string).
+_GEOCODE_FL_CACHE: dict[str, bool] = {}
 
 
 # ── Normalization / dedup helpers ─────────────────────────────────────────────
@@ -111,6 +118,106 @@ def _score_lead(lead: dict, reddit_mentions: dict) -> int:
     return min(score, 100)
 
 
+def _location_looks_florida(location: str) -> bool:
+    """Heuristic: Florida Sunbiz only applies to FL businesses."""
+    if not (location or "").strip():
+        return False
+    s = location.upper()
+    if re.search(r"\bFL\b", s) or "FLORIDA" in s:
+        return True
+    # Common FL metros / counties without explicit state in the query
+    hints = (
+        "MIAMI", "DADE", "MIAMI-DADE", "BROWARD", "PALM BEACH", "FORT LAUDERDALE", "WEST PALM",
+        "BOCA RATON", "DELRAY", "DEERFIELD", "PLANTATION", "PEMBROKE PINES", "HIALEAH",
+        "ORLANDO", "TAMPA", "ST. PETERSBURG", "ST PETERSBURG", "JACKSONVILLE", "SARASOTA",
+        "NAPLES", "FORT MYERS", "KEY WEST", "GAINESVILLE", "TALLAHASSEE",
+        "CLEARWATER", "CORAL GABLES", "SOUTH FLORIDA", "TREASURE COAST", "SPACE COAST",
+        "PANHANDLE", "OCALA", "PENSACOLA", "MELBOURNE", "LAKELAND", "KISSIMMEE",
+    )
+    return any(h in s for h in hints)
+
+
+def _lead_list_suggests_florida(leads: list) -> bool:
+    """True if ranked leads look like FL (Maps/Yelp often set state/address even when the user omits FL)."""
+    for lead in leads or []:
+        st = (lead.get("state") or "").strip().upper()
+        if st == "FL":
+            return True
+        addr = (lead.get("address") or "") + " " + (lead.get("city") or "")
+        if re.search(r"\bFL\b", addr.upper()) or ", FL " in (lead.get("address") or "").upper():
+            return True
+    return False
+
+
+def _location_geocodes_to_florida(location: str) -> bool:
+    """Resolve the free-text location via OpenStreetMap Nominatim; True if the top hit is in Florida.
+
+    This covers city-only queries (e.g. 'Winter Haven') without maintaining a huge city list.
+    Uses a small in-memory cache. On failure or ambiguous results, returns False.
+    """
+    q = (location or "").strip()
+    if not q:
+        return False
+    key = q.lower()
+    if key in _GEOCODE_FL_CACHE:
+        return _GEOCODE_FL_CACHE[key]
+
+    try:
+        r = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q":             f"{q}, USA",
+                "format":        "json",
+                "limit":         1,
+                "addressdetails": 1,
+            },
+            headers={
+                "User-Agent": (
+                    "TenantProspect/1.0 (https://github.com/Desto4/Tenant-Propspect; "
+                    "Florida Sunbiz location check)"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=10,
+        )
+        if r.status_code != 200:
+            _GEOCODE_FL_CACHE[key] = False
+            return False
+        data = r.json()
+        if not data:
+            _GEOCODE_FL_CACHE[key] = False
+            return False
+        addr = (data[0].get("address") or {}) if isinstance(data[0], dict) else {}
+        state = (addr.get("state") or "").strip().lower()
+        # Nominatim US: state is often full name
+        if state in ("florida", "fl"):
+            _GEOCODE_FL_CACHE[key] = True
+            return True
+        # ISO/state_code style when present
+        sc = (addr.get("ISO3166-2-lvl4") or "").upper()
+        if sc == "US-FL":
+            _GEOCODE_FL_CACHE[key] = True
+            return True
+        disp = (data[0].get("display_name") or "")
+        if re.search(r",\s*FL\s*,", disp) or ", Florida," in disp:
+            _GEOCODE_FL_CACHE[key] = True
+            return True
+        _GEOCODE_FL_CACHE[key] = False
+        return False
+    except Exception:
+        _GEOCODE_FL_CACHE[key] = False
+        return False
+
+
+def _should_run_sunbiz(location: str, ranked_leads: list) -> bool:
+    """Run Florida registry lookup when the query, geocoding, or lead rows indicate Florida."""
+    if _location_looks_florida(location):
+        return True
+    if _lead_list_suggests_florida(ranked_leads):
+        return True
+    return _location_geocodes_to_florida(location)
+
+
 def _build_reddit_mention_map(posts: list, candidate_names: list) -> dict:
     """Count how many Reddit posts mention each business by normalised name."""
     if not posts or not candidate_names:
@@ -147,6 +254,7 @@ def find_best_leads(
     location: str,
     num_results: int = 10,
     sources: list = None,
+    enrich_sunbiz: bool = True,
 ) -> dict:
     """
     Search across multiple sources, merge duplicates, rank by quality, return the top N.
@@ -157,6 +265,9 @@ def find_best_leads(
         num_results: how many top-ranked leads to return (default 10)
         sources:     optional list of sources to include;
                      default ['maps', 'yelp', 'reddit', 'perplexity']
+        enrich_sunbiz: when True and the location looks like Florida, run Florida
+                     Division of Corporations (Sunbiz) lookup on each ranked lead
+                     so entity status and officers are filled before enrichment.
 
     Returns:
         {
@@ -284,7 +395,24 @@ def find_best_leads(
     ranked.sort(key=lambda l: l.get("quality_score", 0), reverse=True)
     top = ranked[:num_results]
 
-    # ── 7. Store for downstream enrichment ───────────────────────────────────
+    # ── 7. Florida Sunbiz (entity registry) — part of discovery, not a separate step ──
+    if enrich_sunbiz and _should_run_sunbiz(location, top) and top:
+        try:
+            top = enrich_leads_sunbiz_only(top)
+            n_sb = sum(1 for l in top if (l.get("sunbiz_url") or "").strip())
+            if n_sb:
+                warnings.append(
+                    f"Sunbiz: Florida registry data merged for {n_sb} of {len(top)} ranked lead(s)."
+                )
+            else:
+                warnings.append(
+                    "Sunbiz: no registry matches returned for these trade names "
+                    "(names may differ from legal entity names, or lookups were blocked)."
+                )
+        except Exception as e:
+            warnings.append(f"Sunbiz enrichment error: {e}")
+
+    # ── 8. Store for downstream enrichment ───────────────────────────────────
     set_leads(top)
 
     return {
@@ -296,6 +424,7 @@ def find_best_leads(
             "perplexity":      len(perplexity_leads),
             "reddit_mentions": reddit_total_hits,
             "merged_unique":   len(merged),
+            "sunbiz_enriched": sum(1 for l in top if (l.get("sunbiz_url") or "").strip()),
         },
         "warnings": warnings,
     }
