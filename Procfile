@@ -1,1 +1,1 @@
-web: playwright install chromium && playwright install-deps chromium && gunicorn flask_app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 4
+web: playwright install chromium && gunicorn flask_app_new:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 4

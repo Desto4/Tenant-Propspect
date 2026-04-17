@@ -2,8 +2,8 @@ services:
   - type: web
     name: mmg-agent
     runtime: python
-    buildCommand: pip install -r requirements.txt && playwright install --with-deps chromium
-    startCommand: gunicorn flask_app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 4
+    buildCommand: pip install -r requirements.txt && playwright install chromium
+    startCommand: gunicorn flask_app_new:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 4
     envVars:
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/.browsers

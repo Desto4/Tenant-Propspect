@@ -12,7 +12,7 @@ python3 -m playwright install chromium --quiet 2>/dev/null || true
 lsof -ti:8504 | xargs kill -9 2>/dev/null
 
 # Start Flask in the background
-python3 flask_app.py &
+python3 flask_app_new.py &
 FLASK_PID=$!
 echo "Flask PID: $FLASK_PID"
 
