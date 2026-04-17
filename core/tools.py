@@ -20,9 +20,9 @@ TOOLS = [
             "businesses that appear on multiple sources, scores each one by quality signals "
             "(cross-source presence, Google rating × review count, Yelp rating × review count, "
             "Reddit mentions, data completeness), and returns the top N ranked leads. "
-            "For Florida locations, it also queries the Florida Division of Corporations (Sunbiz) "
-            "for each ranked lead so entity name, status, and registered agent are populated "
-            "in the same step. "
+            "For Florida searches (from the location text or from lead address/state), it also queries "
+            "the Florida Division of Corporations (Sunbiz) for each ranked lead so entity name, status, "
+            "and registered agent are populated in the same step. "
             "Use this as the DEFAULT when the user asks to find leads, find businesses, "
             "or find the best prospects — it produces better results than any single source alone. "
             "After calling this, call enrich_leads_batch in your NEXT tool call to fill in "
@@ -42,9 +42,9 @@ TOOLS = [
                 "enrich_sunbiz": {
                     "type": "boolean",
                     "description": (
-                        "If true (default), run Florida Sunbiz registry lookup on ranked leads "
-                        "when the location appears to be in Florida. Set false to skip Sunbiz "
-                        "(e.g. non-Florida searches that accidentally match FL heuristics)."
+                        "If true (default), run Florida Sunbiz registry lookup on ranked leads when "
+                        "the query or the lead rows (state FL / FL in address) indicate Florida. "
+                        "Set false to skip Sunbiz."
                     ),
                     "default": True,
                 },

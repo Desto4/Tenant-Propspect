@@ -122,12 +122,31 @@ def _location_looks_florida(location: str) -> bool:
         return True
     # Common FL metros / counties without explicit state in the query
     hints = (
-        "MIAMI", "DADE", "BROWARD", "PALM BEACH", "FORT LAUDERDALE", "WEST PALM",
-        "ORLANDO", "TAMPA", "ST. PETERSBURG", "JACKSONVILLE", "SARASOTA",
+        "MIAMI", "DADE", "MIAMI-DADE", "BROWARD", "PALM BEACH", "FORT LAUDERDALE", "WEST PALM",
+        "BOCA RATON", "DELRAY", "DEERFIELD", "PLANTATION", "PEMBROKE PINES", "HIALEAH",
+        "ORLANDO", "TAMPA", "ST. PETERSBURG", "ST PETERSBURG", "JACKSONVILLE", "SARASOTA",
         "NAPLES", "FORT MYERS", "KEY WEST", "GAINESVILLE", "TALLAHASSEE",
-        "CLEARWATER", "HOLLYWOOD FL", "CORAL GABLES", "HIALEAH",
+        "CLEARWATER", "CORAL GABLES", "SOUTH FLORIDA", "TREASURE COAST", "SPACE COAST",
+        "PANHANDLE", "OCALA", "PENSACOLA", "MELBOURNE", "LAKELAND", "KISSIMMEE",
     )
     return any(h in s for h in hints)
+
+
+def _lead_list_suggests_florida(leads: list) -> bool:
+    """True if ranked leads look like FL (Maps/Yelp often set state/address even when the user omits FL)."""
+    for lead in leads or []:
+        st = (lead.get("state") or "").strip().upper()
+        if st == "FL":
+            return True
+        addr = (lead.get("address") or "") + " " + (lead.get("city") or "")
+        if re.search(r"\bFL\b", addr.upper()) or ", FL " in (lead.get("address") or "").upper():
+            return True
+    return False
+
+
+def _should_run_sunbiz(location: str, ranked_leads: list) -> bool:
+    """Run Florida registry lookup when the query or the lead rows indicate Florida."""
+    return _location_looks_florida(location) or _lead_list_suggests_florida(ranked_leads)
 
 
 def _build_reddit_mention_map(posts: list, candidate_names: list) -> dict:
@@ -308,7 +327,7 @@ def find_best_leads(
     top = ranked[:num_results]
 
     # ── 7. Florida Sunbiz (entity registry) — part of discovery, not a separate step ──
-    if enrich_sunbiz and _location_looks_florida(location) and top:
+    if enrich_sunbiz and _should_run_sunbiz(location, top) and top:
         try:
             top = enrich_leads_sunbiz_only(top)
             n_sb = sum(1 for l in top if (l.get("sunbiz_url") or "").strip())

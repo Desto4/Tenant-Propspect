@@ -41,6 +41,10 @@ def _apply_sunbiz_lookup(result: dict, trade_name: str) -> dict:
             result["reg_agent_address"] = sb.get("reg_agent_address", "")
             if sb.get("owner_name") and not result.get("owner_name"):
                 result["owner_name"] = sb.get("owner_name", "")
+            src = list(result.get("sources") or [])
+            if "sunbiz" not in src:
+                src.append("sunbiz")
+                result["sources"] = sorted(src)
     except Exception:
         pass
     return result
